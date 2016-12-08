@@ -1,0 +1,1 @@
+AND foo - and's the value in A with value at foo and dumps the answer into A
