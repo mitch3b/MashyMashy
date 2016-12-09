@@ -32,12 +32,15 @@ CONTROLLER_PORT1          = $4016
 CONTROLLER_PORT2          = $4017
 
 DISPLAY_NUMBERS_Y = 2
-DISPLAY_BP_HUNDREDS_TILE = $0205
-DISPLAY_BP_TENS_TILE = $0209
-DISPLAY_BP_ONES_TILE = $020D
-DIPLAY_GFR_HUNDREDS_TILES = $0211
-DIPLAY_GFR_TENS_TILES = $0215
-DIPLAY_GFR_ONES_TILES = $0219
+DISPLAY_P1_BP_HUNDREDS_TILE = $0205
+DISPLAY_P1_BP_TENS_TILE = $0209
+DISPLAY_P1_BP_ONES_TILE = $020D
+DIPLAY_GT_TENS_TILES = $0211
+DIPLAY_GT_ONES_TILES = $0215
+DIPLAY_GT_TENTHS_TILES = $021D
+DISPLAY_P2_BP_HUNDREDS_TILE = $0221
+DISPLAY_P2_BP_TENS_TILE = $0225
+DISPLAY_P2_BP_ONES_TILE = $0229
 
 SCREEN_WIDTH_TILES = 32
 SCREEN_HEIGHT_TILES = 30;
@@ -72,26 +75,26 @@ p2_buttons_new_press .rs 1;
 start_pressed .rs 1 ; TODO this should really not take a full byte
 
 frame_counter .rs 1;
-bp_counter_ones .rs 1;
-bp_counter_tens .rs 1;
-bp_counter_hundreds .rs 1;
+p1_bp_counter_ones .rs 1;
+p1_bp_counter_tens .rs 1;
+p1_bp_counter_hundreds .rs 1;
+p2_bp_counter_ones .rs 1;
+p2_bp_counter_tens .rs 1;
+p2_bp_counter_hundreds .rs 1;
 
-MAX_TIME = 9 ; should be 15 seconds. limited bc only count frames to 999 =>16.65
-game_over_time .rs 1
+game_over_time_s_ones .rs 1
+game_over_time_s_tens .rs 1
 
 FRAMES_PER_TENTH_SEC = 6 ; NTSC is 60 fps
 less_than_tenth_sec_counter .rs 1
 
-; Game frame rate
-gfr_counter_ones .rs 1
-gfr_counter_tens .rs 1
-gfr_counter_hundreds .rs 1
 ; Game seconds counter
 game_timer_tenths .rs 1
 game_timer_ones .rs 1
 game_timer_tens .rs 1
 
-mash_button .rs 1;
+p1_mash_button .rs 1;
+p2_mash_button .rs 1;
 new_frame .rs 1;
 
 ;;;;;;;;;;;;;;;
@@ -139,15 +142,19 @@ InitState:
   LDA #GAME_TITLE ; want states to disagree so that it'll load the first time
   STA prev_game_state
 
-  LDA #$01
+  LDA #$02
   STA num_players
 
   LDA #BUTTON_B
-  STA mash_button
+  STA p1_mash_button
+  LDA #BUTTON_A
+  STA p2_mash_button
 
 ; TODO make this configurable
-  LDA #MAX_TIME
-  STA game_over_time
+  LDA #$05
+  STA game_over_time_s_ones
+  LDA #$01
+  STA game_over_time_s_tens
 
 LoadPalettes:
   LDA PPU_STATUS        ; read PPU status to reset the high/low latch
@@ -175,9 +182,32 @@ LoadSpritesLoop:
   LDA sprites, x        ; load data from address (sprites +  x)
   STA $0204, x          ; store into RAM address ($0200 + x)
   INX                   ; X = X + 1
-  CPX #$40              ; Compare X to hex $20, decimal 32
+  CPX #$1C              ; Compare X to hex $1C, decimal 28 -> 7 chars, 4 bytes each
   BNE LoadSpritesLoop   ; Branch to LoadSpritesLoop if compare was Not Equal to zero
                         ; if compare was equal to 32, keep going down
+
+  LDA num_players
+  CMP #$02
+  BNE SkipP2
+LoadP2Sprites:
+  LDX #$00              ; start at 0
+LoadP2SpritesLoop:
+  LDA p2_sprites, x        ; load data from address (sprites +  x)
+  STA $0220, x          ; store into RAM address ($0200 + x)
+  INX                   ; X = X + 1
+  CPX #$18              ; Compare X to hex $20, decimal 32
+  BNE LoadP2SpritesLoop   ; Branch to LoadSpritesLoop if compare was Not Equal to zero
+                        ; if compare was equal to 32, keep going down
+
+SkipP2:
+LoadP1Label:
+  LDX #$00
+LoadP1LabelLoop:
+  LDA p1_label, x
+  STA $0238, x
+  INX
+  CPX #$0C
+  BNE LoadP1LabelLoop
 
   LDA #%10001000   ; enable NMI, sprites from Pattern Table 0, background from Pattern Table 1
   STA PPU_CTRL_REG1
@@ -190,7 +220,6 @@ Forever:
   BEQ FrameProcessed
   LDA #00
   STA new_frame ; reset new frame
-  JSR CalcGameFrameCount
   LDX game_state
   CPX #GAME_PLAY
   BNE FrameProcessed ; if games not in play, then jump to end
@@ -233,7 +262,10 @@ GameLogicPlay:
   CPX #GAME_PLAY
   BNE EndGameLogic
   LDX game_timer_ones
-  CPX game_over_time
+  CPX game_over_time_s_ones
+  BNE EndGameLogic
+  LDX game_over_time_s_tens
+  CPX game_timer_tens
   BNE EndGameLogic
   ;;;; Just hit the game over time so call the game over
   LDA #GAME_OVER
@@ -241,51 +273,71 @@ GameLogicPlay:
 EndGameLogic:
 
 DrawFrameCount:
-  LDA game_timer_tenths ; gfr_counter_ones
-  STA DIPLAY_GFR_ONES_TILES
-  LDA game_timer_ones ; gfr_counter_tens
-  STA DIPLAY_GFR_TENS_TILES
-  LDA game_timer_tens ; gfr_counter_hundreds
-  STA DIPLAY_GFR_HUNDREDS_TILES
+  LDA game_timer_tenths
+  STA DIPLAY_GT_TENTHS_TILES
+  LDA game_timer_ones
+  STA DIPLAY_GT_ONES_TILES
+  LDA game_timer_tens
+  STA DIPLAY_GT_TENS_TILES
 DrawButtonPresses:
-  LDA bp_counter_ones
-  STA DISPLAY_BP_ONES_TILE
-  LDA bp_counter_tens
-  STA DISPLAY_BP_TENS_TILE
-  LDA bp_counter_hundreds
-  STA DISPLAY_BP_HUNDREDS_TILE
+  LDA p1_bp_counter_ones
+  STA DISPLAY_P1_BP_ONES_TILE
+  LDA p1_bp_counter_tens
+  STA DISPLAY_P1_BP_TENS_TILE
+  LDA p1_bp_counter_hundreds
+  STA DISPLAY_P1_BP_HUNDREDS_TILE
+  LDA p2_bp_counter_ones
+  STA DISPLAY_P2_BP_ONES_TILE
+  LDA p2_bp_counter_tens
+  STA DISPLAY_P2_BP_TENS_TILE
+  LDA p2_bp_counter_hundreds
+  STA DISPLAY_P2_BP_HUNDREDS_TILE
 
   RTI             ; return from interrupt
 
 CalcButtonPresses:
-  ; Not working :(
-  ; LDA p1_buttons_new_press
-  ; AND mash_button
-  ; BNE DoneBPCalc ; branch if button not down
-  LDA p1_buttons
-  AND mash_button
-  BEQ DoneBPCalc
-  LDA p1_prev_buttons
-  AND mash_button
-  BNE DoneBPCalc
-  LDX bp_counter_ones ; We have a new press
+  LDA p1_buttons_new_press
+  AND p1_mash_button
+  BEQ P1DoneBPCalc ; branch if button not down
+  LDX p1_bp_counter_ones ; We have a new press
   INX
-  STX bp_counter_ones
+  STX p1_bp_counter_ones
   CPX #$0A
-  BNE DoneBPCalc ; if we went over 9
+  BNE P1DoneBPCalc ; if we went over 9
   LDA #00
-  STA bp_counter_ones
-  LDX bp_counter_tens
+  STA p1_bp_counter_ones
+  LDX p1_bp_counter_tens
   INX ; TODO i think there might be a way to do this in place
-  STX bp_counter_tens
+  STX p1_bp_counter_tens
   CPX #$0A
-  BNE DoneBPCalc ; if we went over 99
+  BNE P1DoneBPCalc ; if we went over 99
   LDA #00
-  STA bp_counter_tens
-  LDX bp_counter_hundreds
+  STA p1_bp_counter_tens
+  LDX p1_bp_counter_hundreds
   INX
-  STX bp_counter_hundreds
-DoneBPCalc:
+  STX p1_bp_counter_hundreds
+P1DoneBPCalc:
+  LDA p2_buttons_new_press
+  AND p2_mash_button
+  BEQ P2DoneBPCalc ; branch if button not down
+  LDX p2_bp_counter_ones ; We have a new press
+  INX
+  STX p2_bp_counter_ones
+  CPX #$0A
+  BNE P2DoneBPCalc ; if we went over 9
+  LDA #00
+  STA p2_bp_counter_ones
+  LDX p2_bp_counter_tens
+  INX ; TODO i think there might be a way to do this in place
+  STX p2_bp_counter_tens
+  CPX #$0A
+  BNE P2DoneBPCalc ; if we went over 99
+  LDA #00
+  STA p2_bp_counter_tens
+  LDX p2_bp_counter_hundreds
+  INX
+  STX p2_bp_counter_hundreds
+P2DoneBPCalc:
   RTS
 
 CalcGameTime:
@@ -316,27 +368,6 @@ CalcGameTime:
 DoneGameTimeCalc:
   RTS
 
-CalcGameFrameCount:
-  LDX gfr_counter_ones
-  INX
-  STX gfr_counter_ones
-  CPX #$0A
-  BNE DoneFrameCalc ; if we went over 9
-  LDA #00
-  STA gfr_counter_ones
-  LDX gfr_counter_tens
-  INX ; TODO i think there might be a way to do this in place
-  STX gfr_counter_tens
-  CPX #$0A
-  BNE DoneFrameCalc ; if we went over 99
-  LDA #00
-  STA gfr_counter_tens
-  LDX gfr_counter_hundreds
-  INX
-  STX gfr_counter_hundreds
-DoneFrameCalc:
-  RTS
-
 ReadController1:
   LDA p1_buttons
   STA p1_prev_buttons ; backup the previous buttons
@@ -352,10 +383,10 @@ ReadController1Loop:
   DEX
   BNE ReadController1Loop
   ; store what was newly pressed (not working)
-  ;LDA p1_buttons
-  ;EOR #p1_prev_buttons
-  ;AND #p1_buttons
-  ;STA p1_buttons_new_press
+  LDA p1_buttons
+  EOR p1_prev_buttons
+  AND p1_buttons
+  STA p1_buttons_new_press
   RTS
 
 ReadController2:
@@ -372,6 +403,11 @@ ReadController2Loop:
   ROL p2_buttons     ; bit0 <- Carry
   DEX
   BNE ReadController2Loop
+  ; store what was newly pressed (not working)
+  LDA p2_buttons
+  EOR p2_prev_buttons
+  AND p2_buttons
+  STA p2_buttons_new_press
   RTS
 
 ; ###############################
@@ -391,12 +427,26 @@ sprites:
   .db $80, $00, $00, $80   ;hundreds bp count
   .db $80, $00, $00, $88   ;tens bp count
   .db $80, $00, $00, $90   ;ones bp count
-  .db $90, $00, $00, $80   ;hundreds frame count ; Currently being used for seconds not frames
-  .db $90, $00, $00, $88   ;tens frame count
-  .db $90, $00, $00, $90   ;ones frame count
-  .db $60, $00, $00, $80   ;tens seconds countdown
-  .db $60, $00, $00, $88   ;tens seconds countdown
-  .db $60, $00, $00, $90   ;tens seconds countdown
+  .db $90, $00, $00, $80   ;p1 tens game timer
+  .db $90, $00, $00, $88   ;p1 ones game timer
+  .db $90, $AF, $00, $90   ;p1 decimal
+  .db $90, $00, $00, $98   ;p1 tenths game timer
+
+p2_sprites:
+  .db $A0, $00, $00, $80   ;p2 hundreds game timer
+  .db $A0, $00, $00, $88   ;p2 tens game timer
+  .db $A0, $00, $00, $90   ;p2 ones game timer
+  .db $A0, $19, $00, $60   ; 'p' TODO these should go in the background
+  .db $A0, $02, $00, $68   ; '2'
+  .db $A0, $28, $00, $70   ; '-'
+
+p1_label:
+  .db $80, $19, $00, $60   ; 'p' TODO these should go in the background
+  .db $80, $01, $00, $68   ; '1'
+  .db $80, $28, $00, $70   ; '-'
+
+press_start:
+  .db $19, $1B, $0E, $1C, $1C, $24, $1C, $1D, $0A, $1B, $1D
 
   .org $FFFA     ;first of the three vectors starts here
   .dw NMI        ;when an NMI happens (once per frame if enabled) the
