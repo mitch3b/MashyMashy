@@ -5,4 +5,5 @@ To Build Rom:
 Mac:
 ./nesasm MashyMashy.asm
 
-Haven't tested building with windows, but included what i think is the exe for it
+Windows
+./NESASM3.exe MashyMashy.asm
