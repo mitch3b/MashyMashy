@@ -62,8 +62,11 @@ GAME_TITLE = 1
 GAME_MENU = 2
 GAME_PLAY = 3
 GAME_OVER = 4
-SCROLL_TO_GAME = 17
-SCROLL_TO_MENU = 9
+GAME_SCROLL_TO_GAME = 5
+GAME_SCROLL_TO_MENU = 6
+
+GAME_OVER_WAIT_FRAMES = 60
+game_over_frame_counter .rs 1
 
 num_players .rs 1 ;
 
@@ -168,7 +171,9 @@ InitState:
   LDA #GAME_MENU ; TODO want states to disagree so that it'll load the first time
   STA prev_game_state
 
-  JSR LoadGameMenu
+  JSR LoadMenu
+  ; Don't ever overwrite background so just write them once
+  JSR LoadMenuBackground
   JSR LoadGameBackground
 
   LDA #$01
@@ -232,7 +237,7 @@ Forever:
   LDA #00
   STA new_frame ; reset new frame
   LDA game_state
-  CMP #SCROLL_TO_GAME
+  CMP #GAME_SCROLL_TO_GAME
   BNE NotScrollingRight
   LDX scroll
   INX
@@ -253,8 +258,9 @@ DoneScrollingToGame:
   JMP FrameProcessed
 NotScrollingRight:
   LDA game_state
-  CMP #SCROLL_TO_MENU
+  CMP #GAME_SCROLL_TO_MENU
   BNE NotScrolling
+  LDX scroll
   DEX
   DEX
   DEX
@@ -269,7 +275,7 @@ DoneScrollingToMenu:
   STA game_state
   JSR PushScrollToPPU  ; Reset scroll to 0
   JSR DisplayScreen0   ; Set to display screen 0
-  JSR LoadGameMenu         ; load menu sprites
+  JSR LoadMenu         ; load menu sprites
   JMP FrameProcessed
 NotScrolling:
   LDA game_state
@@ -334,9 +340,9 @@ GameLogicPlay:
   CMP game_timer_tens
   BNE EndGameLogic
   ;;;; Just hit the game over time so call the game over
-  LDA GAME_OVER
+  LDA #GAME_SCROLL_TO_MENU
   STA game_state
-  ;JSR MoveSpritesOffScreen
+  JSR MoveSpritesOffScreen
 EndGameLogic:
   RTI             ; return from interrupt
 
@@ -536,7 +542,7 @@ NotMenuSecondsOption:
   LDA p1_buttons_new_press
   AND #BUTTON_START
   BEQ MenuLogicDone
-  LDA #SCROLL_TO_GAME ; start the game
+  LDA #GAME_SCROLL_TO_GAME ; start the game
   STA game_state
   JSR MoveSpritesOffScreen
   JMP MenuLogicDone
@@ -602,7 +608,7 @@ TwoPlayers:
 DoneTogglePlayers:
   RTS
 
-LoadGameMenu:
+LoadMenu:
 LoadMenuOptionChooser:
   LDA #MENU_NUM_PLAYERS_Y
   STA REG_MENU_OPTION_CHOOSER_Y
@@ -641,6 +647,7 @@ LoadMashButtonDisplayLoop:
 
 ;TODO set this near to where we're setting the display
   JSR LoadMashButtonA
+  RTS
 
 LoadMenuBackground:
   LDA PPU_STATUS        ; read PPU status to reset the high/low latch
@@ -709,7 +716,12 @@ LoadGameBackground4Loop:
   RTS
 
 LoadGame:
-  JSR MoveSpritesOffScreen
+  JSR MoveSpritesOffScreen ; TODO make sure this happens the same sort of way of going back to menu
+
+  LDA #$00
+  STA game_timer_tenths
+  STA game_timer_ones
+  STA game_timer_tens
 
 LoadP1Sprites:
   LDX #$00              ; start at 0
@@ -747,11 +759,6 @@ LoadP1LabelLoop:
   INX
   CPX #$0C
   BNE LoadP1LabelLoop
-
-
-  ; TODO who knows if this is how to do this
-
-  ;JSR LoadGameBackground
 
   RTS
 
@@ -1009,10 +1016,10 @@ menu_background_4:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-  .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 27
+  .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 29
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 28
-  .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
+  .db $0A,$24,$16,$12,$1D,$0C,$11,$03,$0A,$24,$10,$0A,$16,$0E,$26,$24  ;; A Mitch3a Game
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 29
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 30
