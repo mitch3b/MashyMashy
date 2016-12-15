@@ -233,17 +233,15 @@ LoadAttributeLoop:
 
 Forever:
   LDA new_frame
-  BEQ FrameProcessed
+  BNE ProcessFrame
+  JMP Forever
+ProcessFrame:
   LDA #00
   STA new_frame ; reset new frame
   LDA game_state
   CMP #GAME_SCROLL_TO_GAME
   BNE NotScrollingRight
-  LDX scroll
-  INX
-  INX
-  INX
-  INX
+  JSR IncrementScroll
   STX scroll
   CPX #$00
   BEQ DoneScrollingToGame
@@ -260,11 +258,7 @@ NotScrollingRight:
   LDA game_state
   CMP #GAME_SCROLL_TO_MENU
   BNE NotScrolling
-  LDX scroll
-  DEX
-  DEX
-  DEX
-  DEX
+  JSR DecrementScroll
   STX scroll
   CPX #$00
   BEQ DoneScrollingToMenu
@@ -288,11 +282,33 @@ NotScrolling:
 TryMenu:
   LDA game_state
   CMP #GAME_MENU
-  BNE FrameProcessed
+  BNE TryGameOver
   JSR MenuLogic
+  JMP FrameProcessed
+TryGameOver:
+  LDA game_state
+  CMP #GAME_OVER
+  BNE FrameProcessed
+  JSR GameOverLogic
+  JMP FrameProcessed
 FrameProcessed:
   JMP Forever     ;jump back to Forever, infinite loop
 
+IncrementScroll:
+  LDX scroll
+  INX
+  INX
+  INX
+  INX
+  RTS
+
+DecrementScroll:
+  LDX scroll
+  DEX
+  DEX
+  DEX
+  DEX
+  RTS
 
 DisplayScreen0:
   LDA #%10011000
@@ -340,9 +356,8 @@ GameLogicPlay:
   CMP game_timer_tens
   BNE EndGameLogic
   ;;;; Just hit the game over time so call the game over
-  LDA #GAME_SCROLL_TO_MENU
+  LDA #GAME_OVER
   STA game_state
-  JSR MoveSpritesOffScreen
 EndGameLogic:
   RTI             ; return from interrupt
 
@@ -439,6 +454,24 @@ CalcGameTime:
   INX
   STX game_timer_tens
 DoneGameTimeCalc:
+  RTS
+
+GameOverLogic:
+  LDX game_over_frame_counter
+  CPX #GAME_OVER_WAIT_FRAMES
+  BEQ GameOverWaitDone
+  INX
+  STX game_over_frame_counter
+  JMP GameOverLogicDone
+GameOverWaitDone:
+  LDA p1_buttons_new_press
+  CMP #$00
+  BEQ GameOverLogicDone
+  ;; Wait is over and button is pressed so go back to menu
+  LDA #GAME_SCROLL_TO_MENU
+  STA game_state
+  JSR MoveSpritesOffScreen
+GameOverLogicDone:
   RTS
 
 MenuLogic:
@@ -722,6 +755,7 @@ LoadGame:
   STA game_timer_tenths
   STA game_timer_ones
   STA game_timer_tens
+  STA game_over_frame_counter
 
 LoadP1Sprites:
   LDX #$00              ; start at 0
