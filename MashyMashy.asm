@@ -79,6 +79,7 @@ BUTTON_UP     = %00001000
 BUTTON_DOWN   = %00000100
 BUTTON_LEFT   = %00000010
 BUTTON_RIGHT  = %00000001
+BUTTON_NINJA  = %01000100
 
 TOGGLE_BUTTONS = %11010011
 
@@ -88,6 +89,8 @@ p1_prev_buttons .rs 1 ; to track what buttons changed
 p2_prev_buttons .rs 1 ; to track what buttons changed
 p1_buttons_new_press .rs 1;
 p2_buttons_new_press .rs 1;
+p1_in_press .rs 1;
+p2_in_press .rs 1;
 start_pressed .rs 1 ; TODO this should really not take a full byte
 
 p1_bp_counter_ones .rs 1;
@@ -176,7 +179,7 @@ InitState:
   JSR LoadMenuBackground
   JSR LoadGameBackground
 
-  LDA #BUTTON_A
+  LDA #BUTTON_NINJA
   STA mash_button
 
 ; Set default value
@@ -381,9 +384,15 @@ DrawButtonPresses:
   RTS
 
 CalcButtonPresses:
-  LDA p1_buttons_new_press
+  LDA p1_in_press
+  CMP #$01
+  BEQ CheckButtonUnPressed
+  LDA p1_buttons
   AND mash_button
-  BEQ P1DoneBPCalc ; branch if button not down
+  CMP mash_button
+  BNE P1DoneBPCalc ; branch if button not down
+  LDA #$01
+  STA p1_in_press ; button is pressed
   LDX p1_bp_counter_ones ; We have a new press
   INX
   STX p1_bp_counter_ones
@@ -401,6 +410,13 @@ CalcButtonPresses:
   LDX p1_bp_counter_hundreds
   INX
   STX p1_bp_counter_hundreds
+CheckButtonUnPressed:
+  LDA p1_buttons
+  AND mash_button
+  BNE P1DoneBPCalc
+  ;; buttons unpressed
+  LDA #$00
+  STA p1_in_press
 P1DoneBPCalc:
   LDA p2_buttons_new_press
   AND mash_button
@@ -599,6 +615,7 @@ DoneToggleNextMenuItem:
   RTS
 
 ToggleMashButton:
+  JMP EndToggleMashButton ;; Only for ninja gaiden
   LDA mash_button
   CMP #BUTTON_A
   BNE ToggleMashButtonTryB
@@ -678,7 +695,7 @@ LoadMashButtonDisplayLoop:
   BNE LoadMashButtonDisplayLoop
 
 ;TODO set this near to where we're setting the display
-  JSR LoadMashButtonA
+  JSR LoadMashButtonNinja
   RTS
 
 LoadMenuBackground:
@@ -755,6 +772,8 @@ LoadGame:
   STA game_timer_ones
   STA game_timer_tens
   STA game_over_frame_counter
+  STA p1_in_press
+  STA p2_in_press
 
 LoadP1Sprites:
   LDX #$00              ; start at 0
@@ -796,6 +815,23 @@ LoadP1LabelLoop:
   RTS
 
 ; TODO there has to be a better way to do this
+LoadMashButtonNinja
+  LDA #BUTTON_NINJA
+  STA mash_button
+  LDX #$00
+  LDY #$00
+LoadMashButtonNinjaLoop:
+  LDA ninja_text, x
+  STA $0211, y
+  INX
+  INY
+  INY
+  INY
+  INY ; There has to be a better way to do this
+  CPX #$06
+  BNE LoadMashButtonNinjaLoop
+  RTS
+
 LoadMashButtonA
   LDA #BUTTON_A
   STA mash_button
@@ -992,6 +1028,9 @@ a_text
 
 b_text
   .db $0B, $24, $24, $24, $24, $24
+
+ninja_text
+  .db $1E, $19, $29, $0B, $24, $24
 
 menu_background_1:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 1
