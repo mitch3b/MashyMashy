@@ -81,7 +81,9 @@ BUTTON_LEFT   = %00000010
 BUTTON_RIGHT  = %00000001
 BUTTON_DOWN_B  = %01000100 ; for ninja gaiden, mashing down+b together is important for last boss
 
-TOGGLE_BUTTONS = %11010011
+TOGGLE_BUTTONS = %11010011 ; left/right/b/a/start
+TOGGLE_PREV_BUTTONS = %01000010 ; left and b
+TOGGLE_NEXT_BUTTONS = %10010001 ; right, a or start
 
 p1_buttons   .rs 1  ; player 1 gamepad buttons, one bit per button
 p2_buttons   .rs 1  ; player 2 gamepad buttons, one bit per button
@@ -488,18 +490,31 @@ MenuLogic:
   LDA REG_MENU_OPTION_CHOOSER_Y
   CMP #MENU_MASH_BUTTON_Y
   BNE NotChoosingMashButton
-  LDA #TOGGLE_BUTTONS
+  LDA #TOGGLE_NEXT_BUTTONS
+  AND p1_buttons_new_press
+  BEQ NotChoosingNextMashButton
+  JSR ToggleNextMashButton
+  JMP MenuLogicDone
+NotChoosingNextMashButton:
+  LDA #TOGGLE_PREV_BUTTONS
   AND p1_buttons_new_press
   BEQ NotChoosingMashButton
-  JSR ToggleMashButton
+  JSR TogglePrevMashButton
   JMP MenuLogicDone
 NotChoosingMashButton:
-  LDA p1_buttons_new_press
-  AND #BUTTON_SELECT
-  BEQ NotToggleMenuButton
+  LDA #BUTTON_SELECT
+  ORA #BUTTON_DOWN
+  AND p1_buttons_new_press
+  BEQ NotToggleMenuDownButton
   JSR ToggleNextMenuItem ; just toggle menu button
   JMP MenuLogicDone
-NotToggleMenuButton:
+NotToggleMenuDownButton:
+  LDA #BUTTON_UP
+  AND p1_buttons_new_press
+  BEQ NotToggleMenuUpButton
+  JSR TogglePrevMenuItem ; just toggle menu button
+  JMP MenuLogicDone
+NotToggleMenuUpButton:
   LDA REG_MENU_OPTION_CHOOSER_Y
   CMP #MENU_NUM_PLAYERS_Y
   BNE NotToggleNumPlayers
@@ -514,8 +529,7 @@ NotMashButton:
   LDA REG_MENU_OPTION_CHOOSER_Y
   CMP #MENU_SECONDS_Y
   BNE NotMenuSecondsOption
-  LDA #BUTTON_LEFT
-  ORA #BUTTON_B
+  LDA #TOGGLE_PREV_BUTTONS
   AND p1_buttons_new_press
   BEQ MenuSecOptionCheckIncrease
         ; Decrease
@@ -547,8 +561,7 @@ MenuSecOptionDecreaseSimple: ; Can just subtract one
   STX menu_game_time_s_ones
   JMP MenuLogicDone
 MenuSecOptionCheckIncrease:
-  LDA #BUTTON_RIGHT
-  ORA #BUTTON_A
+  LDA #TOGGLE_NEXT_BUTTONS
   AND p1_buttons_new_press
   BEQ NotMenuSecondsOption
      ; Increase
@@ -602,6 +615,7 @@ ToggleNextMenuItem
   CPX #MENU_START_Y
   BEQ GoBackToFirstMenuItem
   LDA REG_MENU_OPTION_CHOOSER_Y
+  CLC      ; clear carry
   ADC #$10 ; shift down 2 16 pixels
   STA REG_MENU_OPTION_CHOOSER_Y
   JMP DoneToggleNextMenuItem
@@ -611,30 +625,74 @@ GoBackToFirstMenuItem:
 DoneToggleNextMenuItem:
   RTS
 
-ToggleMashButton:
+TogglePrevMenuItem
+  LDX REG_MENU_OPTION_CHOOSER_Y
+  CPX #MENU_NUM_PLAYERS_Y
+  BEQ GoBackToLastMenuItem
+  LDA REG_MENU_OPTION_CHOOSER_Y
+  SEC      ; set clear carry bit
+  SBC #$10 ; shift down 2 16 pixels
+  STA REG_MENU_OPTION_CHOOSER_Y
+  JMP DoneTogglePrevMenuItem
+GoBackToLastMenuItem:
+  LDA #MENU_START_Y
+  STA REG_MENU_OPTION_CHOOSER_Y
+DoneTogglePrevMenuItem:
+  RTS
+
+; TODO probably a less sloppy way than having separate next/prev
+; A->B->Start->Select->Down+B->A
+ToggleNextMashButton:
   LDA mash_button
   CMP #BUTTON_A
-  BNE ToggleMashButtonTryB
+  BNE ToggleNextMashButtonTryB
   JSR LoadMashButtonB
-  JMP EndToggleMashButton
-ToggleMashButtonTryB:
+  JMP EndToggleNextMashButton
+ToggleNextMashButtonTryB:
   CMP #BUTTON_B
-  BNE ToggleMashButtonTryStart
+  BNE ToggleNextMashButtonTryStart
   JSR LoadMashButtonStart
-  JMP EndToggleMashButton
-ToggleMashButtonTryStart:
+  JMP EndToggleNextMashButton
+ToggleNextMashButtonTryStart:
   CMP #BUTTON_START
-  BNE ToggleMashButtonTrySelect
+  BNE ToggleNextMashButtonTrySelect
   JSR LoadMashButtonSelect
-  JMP EndToggleMashButton
-ToggleMashButtonTrySelect
+  JMP EndToggleNextMashButton
+ToggleNextMashButtonTrySelect
   CMP #BUTTON_SELECT
-  BNE ToggleMashButtonTryDownB
+  BNE ToggleNextMashButtonTryDownB
   JSR LoadMashButtonDownB
-  JMP EndToggleMashButton
-ToggleMashButtonTryDownB
+  JMP EndToggleNextMashButton
+ToggleNextMashButtonTryDownB
   JSR LoadMashButtonA ; None other to try so no need to verify we're on DownB
-EndToggleMashButton:
+EndToggleNextMashButton:
+  RTS
+
+; A<-B<-Start<-Select<-Down+B<-A
+TogglePrevMashButton:
+  LDA mash_button
+  CMP #BUTTON_A
+  BNE TogglePrevMashButtonTryDownB
+  JSR LoadMashButtonDownB
+  JMP EndTogglePrevMashButton
+TogglePrevMashButtonTryDownB:
+  CMP #BUTTON_DOWN_B
+  BNE TogglePrevMashButtonTrySelect
+  JSR LoadMashButtonSelect
+  JMP EndTogglePrevMashButton
+TogglePrevMashButtonTrySelect:
+  CMP #BUTTON_SELECT
+  BNE TogglePrevMashButtonTryStart
+  JSR LoadMashButtonStart
+  JMP EndTogglePrevMashButton
+TogglePrevMashButtonTryStart:
+  CMP #BUTTON_START
+  BNE TogglePrevMashButtonTryB
+  JSR LoadMashButtonB
+  JMP EndTogglePrevMashButton
+TogglePrevMashButtonTryB:
+  JSR LoadMashButtonA ; None other to try so no need to verify we're on B
+EndTogglePrevMashButton:
   RTS
 
 ToggleNumPlayers:
