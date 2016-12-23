@@ -171,6 +171,17 @@ vblankwait2:      ; Second wait for vblank, PPU is ready after this
 
 ;MITCH
 InitState:
+  ; Set default value
+  LDA #$05
+  STA menu_game_time_s_ones
+  LDA #$00
+  STA menu_game_time_s_tens
+
+  LDA #$01
+  STA num_players
+  LDA #BUTTON_A
+  STA mash_button
+
   LDA #GAME_MENU
   STA game_state
   LDA #GAME_MENU ; TODO want states to disagree so that it'll load the first time
@@ -180,15 +191,6 @@ InitState:
   ; Don't ever overwrite background so just write them once
   JSR LoadMenuBackground
   JSR LoadGameBackground
-
-; Set default value
-  LDA #$05
-  STA menu_game_time_s_ones
-  LDA #$00
-  STA menu_game_time_s_tens
-
-  LDA #$01
-  STA num_players
 
 LoadPalettes:
   LDA PPU_STATUS        ; read PPU status to reset the high/low latch
@@ -757,7 +759,9 @@ LoadMashButtonDisplayLoop:
   CPX #$18              ; 6 sprites (MAX word is 'select')
   BNE LoadMashButtonDisplayLoop
 
-  JSR LoadMashButtonA
+  ;TODO this is hacky. do this smarter
+  JSR ToggleNextMashButton
+  JSR TogglePrevMashButton
   RTS
 
 LoadMenuBackground:
