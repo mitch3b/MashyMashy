@@ -700,21 +700,22 @@ EndTogglePrevMashButton:
 
 ToggleNumPlayers:
   LDA num_players
-  CMP #$02
-  BNE TwoPlayers
-  ; from Two to One Player
-  LDA #01
+  EOR #%00000011 ; ignore first 6 bits. last two either 1 or 2 (01 or 10)
   STA num_players
+  JSR UpdateNumPlayersArrow
+  RTS
+
+UpdateNumPlayersArrow:
+  LDA num_players
+  CMP #$02
+  BEQ UpdateNumPlayersArrowTo2
   LDA #NUM_PLAYERS_1_X
   STA NUM_PLAYER_CHOSER_X
-  JMP DoneTogglePlayers
-TwoPlayers:
-  ; from One to Two Player
-  LDA #02
-  STA num_players
+  JMP UpdateNumPlayersArrowDone
+UpdateNumPlayersArrowTo2:
   LDA #NUM_PLAYERS_2_X
   STA NUM_PLAYER_CHOSER_X
-DoneTogglePlayers:
+UpdateNumPlayersArrowDone:
   RTS
 
 LoadMenu:
@@ -736,10 +737,8 @@ LoadNumPlayerArrowLoop:
   CPX #$04              ;
   BNE LoadNumPlayerArrowLoop
 
-  ; TODO this is hacky, but will work for now (forces num players to draw)
-  JSR ToggleNumPlayers
-  JSR ToggleNumPlayers
-  
+  JSR UpdateNumPlayersArrow
+
 LoadMenuGameTime:
   LDX #$00
 LoadMenuGameTimeLoop:
