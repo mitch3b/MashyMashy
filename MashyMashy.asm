@@ -187,6 +187,9 @@ InitState:
   LDA #$00
   STA menu_game_time_s_tens
 
+  LDA #$01
+  STA num_players
+
 LoadPalettes:
   LDA PPU_STATUS        ; read PPU status to reset the high/low latch
   LDA #$3F
@@ -715,8 +718,6 @@ DoneTogglePlayers:
   RTS
 
 LoadMenu:
-  LDA #$01
-  STA num_players
 LoadMenuOptionChooser:
   LDA #MENU_NUM_PLAYERS_Y
   STA REG_MENU_OPTION_CHOOSER_Y
@@ -735,6 +736,10 @@ LoadNumPlayerArrowLoop:
   CPX #$04              ;
   BNE LoadNumPlayerArrowLoop
 
+  ; TODO this is hacky, but will work for now (forces num players to draw)
+  JSR ToggleNumPlayers
+  JSR ToggleNumPlayers
+  
 LoadMenuGameTime:
   LDX #$00
 LoadMenuGameTimeLoop:
