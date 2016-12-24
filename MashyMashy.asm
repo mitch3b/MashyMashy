@@ -362,6 +362,7 @@ GameLogicPlay:
   ;;;; Just hit the game over time so call the game over
   LDA #GAME_OVER
   STA game_state
+  JSR DisplayGameOver
 EndGameLogic:
   RTI             ; return from interrupt
 
@@ -481,6 +482,7 @@ GameOverLogic:
   STX game_over_frame_counter
   JMP GameOverLogicDone
 GameOverWaitDone:
+  JSR DisplayPressAnything
   LDA p1_buttons_new_press
   CMP #$00
   BEQ GameOverLogicDone
@@ -529,7 +531,6 @@ NotToggleMenuUpButton:
   JSR ToggleNumPlayers
   JMP MenuLogicDone
 NotToggleNumPlayers:
-        ;TODO if button and AB/Start, go to choose mash button
 NotMashButton:
   LDA REG_MENU_OPTION_CHOOSER_Y
   CMP #MENU_SECONDS_Y
@@ -537,47 +538,13 @@ NotMashButton:
   LDA #TOGGLE_PREV_BUTTONS
   AND p1_buttons_new_press
   BEQ MenuSecOptionCheckIncrease
-        ; Decrease
-  LDX menu_game_time_s_ones
-  CPX #$01
-  BNE NotDecreaseTimeWrap
-  LDA menu_game_time_s_tens
-  CMP #$00
-  BNE NotDecreaseTimeWrap
-  ;; We're at 01 so wrap back to 60
-  LDA #$00
-  STA menu_game_time_s_ones
-  LDA #$06
-  STA menu_game_time_s_tens
-  JMP MenuLogicDone
-NotDecreaseTimeWrap:
-  LDA menu_game_time_s_ones
-  CMP #$00
-  BNE MenuSecOptionDecreaseSimple
-  ;; Already took care of the 01->60 case so safe to just wrap the tens
-  LDA #$09
-  STA menu_game_time_s_ones
-  LDX menu_game_time_s_tens
-  DEX
-  STX menu_game_time_s_tens
-  JMP MenuLogicDone
-MenuSecOptionDecreaseSimple: ; Can just subtract one
-  DEX
-  STX menu_game_time_s_ones
+  JSR TogglePrevTime
   JMP MenuLogicDone
 MenuSecOptionCheckIncrease:
   LDA #TOGGLE_NEXT_BUTTONS
   AND p1_buttons_new_press
   BEQ NotMenuSecondsOption
-     ; Increase
-  LDA menu_game_time_s_tens
-  CMP #$06
-  BNE MenuSecIncreaseNoFullWrap
-  ; max value so go back to 1 second
-  LDA #$01
-  STA menu_game_time_s_ones
-  LDA #$00
-  STA menu_game_time_s_tens
+  JSR ToggleNextTime
   JMP MenuLogicDone
 MenuSecIncreaseNoFullWrap:
   LDA menu_game_time_s_ones
@@ -608,11 +575,6 @@ NotMenuSecondsOption:
   JSR MoveSpritesOffScreen
   JMP MenuLogicDone
 MenuLogicDone:
-; TODO this stuff might be cleaner somewhere else
-  LDA menu_game_time_s_ones
-  STA $020D
-  LDA menu_game_time_s_tens
-  STA $0209
   RTS
 
 ToggleNextMenuItem
@@ -720,6 +682,57 @@ UpdateNumPlayersArrowTo2:
 UpdateNumPlayersArrowDone:
   RTS
 
+TogglePrevTime:
+  LDA menu_game_time_s_ones
+  CMP #$00 ; 10
+  BEQ ToggleTimeTo5
+  CMP #$05 ; 5
+  BEQ ToggleTimeTo2
+  CMP #$02 ; 2
+  BEQ ToggleTimeTo1
+  ; we know we're at 1
+  JMP ToggleTimeTo10
+ToggleNextTime:
+  LDA menu_game_time_s_ones
+  CMP #$00 ; 10
+  BEQ ToggleTimeTo1
+  CMP #$05 ; 5
+  BEQ ToggleTimeTo10
+  CMP #$02 ; 2
+  BEQ ToggleTimeTo5
+  ; we know we're at 1
+  JMP ToggleTimeTo2
+ToggleTimeTo1:
+  LDA #$01
+  STA menu_game_time_s_ones
+  LDA #$00
+  STA menu_game_time_s_tens
+  JMP UpdateMenuTime
+ToggleTimeTo2:
+  LDA #$02
+  STA menu_game_time_s_ones
+  LDA #$00
+  STA menu_game_time_s_tens
+  JMP UpdateMenuTime
+ToggleTimeTo5:
+  LDA #$05
+  STA menu_game_time_s_ones
+  LDA #$00
+  STA menu_game_time_s_tens
+  JMP UpdateMenuTime
+ToggleTimeTo10:
+  LDA #$00
+  STA menu_game_time_s_ones
+  LDA #$01
+  STA menu_game_time_s_tens
+  JMP UpdateMenuTime
+UpdateMenuTime:
+  LDA menu_game_time_s_ones
+  STA $020D
+  LDA menu_game_time_s_tens
+  STA $0209
+  RTS
+
 LoadMenu:
 LoadMenuOptionChooser:
   LDA #MENU_NUM_PLAYERS_Y
@@ -749,6 +762,7 @@ LoadMenuGameTimeLoop:
   INX
   CPX #$08              ; 2 sprites (tens and ones)
   BNE LoadMenuGameTimeLoop
+  JSR UpdateMenuTime
 
 LoadMashButtonDisplay
   LDX #$00
@@ -875,9 +889,43 @@ LoadP1LabelLoop:
   LDA p1_label, x
   STA $0238, x
   INX
-  CPX #$0C
+  CPX #$0C            ; 3 sprites
   BNE LoadP1LabelLoop
 
+  RTS
+
+DisplayGameOver:
+  LDX #$00
+DisplayGameTextLoop:
+  LDA game_text, x
+  STA $0244, x
+  INX
+  CPX #$10 ; 16 -> 4 sprites
+  BNE DisplayGameTextLoop
+  LDX #$00
+DisplayOverTextLoop:
+  LDA over_text, x
+  STA $0254, x
+  INX
+  CPX #$10 ; 16 -> 4 sprites
+  BNE DisplayOverTextLoop
+  RTS
+
+DisplayPressAnything:
+  LDX #$00
+DisplayPressTextLoop:
+  LDA press_text, x
+  STA $0264, x
+  INX
+  CPX #$14 ; 20 -> 5 sprites
+  BNE DisplayPressTextLoop
+  LDX #$00
+DisplayAnythingTextLoop:
+  LDA anything_text, x
+  STA $0278, x
+  INX
+  CPX #$20 ; 32 -> 8 sprites
+  BNE DisplayAnythingTextLoop
   RTS
 
 ; TODO there has to be a better way to do this
@@ -1070,6 +1118,35 @@ menu_button_choice
   .db $40, $0A, $00, $90
   .db $40, $0A, $00, $98
   .db $40, $0A, $00, $A0
+
+game_text
+  .db $A0, $10, $00, $58
+  .db $A0, $0A, $00, $60
+  .db $A0, $16, $00, $68
+  .db $A0, $0E, $00, $70
+
+over_text
+  .db $A0, $18, $00, $80
+  .db $A0, $1F, $00, $88
+  .db $A0, $0E, $00, $90
+  .db $A0, $1B, $00, $98
+
+press_text
+  .db $B0, $19, $00, $40
+  .db $B0, $1B, $00, $48
+  .db $B0, $0E, $00, $50
+  .db $B0, $1C, $00, $58
+  .db $B0, $1C, $00, $60
+
+anything_text
+  .db $B0, $0A, $00, $78
+  .db $B0, $17, $00, $80
+  .db $B0, $22, $00, $88
+  .db $B0, $1D, $00, $90
+  .db $B0, $11, $00, $98
+  .db $B0, $12, $00, $A0
+  .db $B0, $17, $00, $A8
+  .db $B0, $10, $00, $B0
 
 up_text
   .db $1E, $19, $24, $24, $24, $24
