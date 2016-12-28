@@ -102,6 +102,12 @@ p2_bp_counter_ones .rs 1;
 p2_bp_counter_tens .rs 1;
 p2_bp_counter_hundreds .rs 1;
 
+rate_count_frames .rs 1;
+p1_bp_rate_count .rs 1;
+p2_bp_rate_count .rs 1;
+bp_rate_count_times_4 .rs 1; TODO don't know how to do this any other way
+
+
 menu_game_time_s_ones .rs 1
 menu_game_time_s_tens .rs 1
 
@@ -282,6 +288,7 @@ NotScrolling:
   JSR CalcGameTime        ; In game
   JSR CalcButtonPresses
   JSR DrawFrameCount
+  JSR RateDisplay
   JMP FrameProcessed
 TryMenu:
   LDA game_state
@@ -296,7 +303,53 @@ TryGameOver:
   JSR GameOverLogic
   JMP FrameProcessed
 FrameProcessed:
+  LDX rate_count_frames
+  INX
+  STX rate_count_frames
+  TXA
+  AND #%00001111 ; on'y want to decrement so often
+  CMP #$00
+  BNE RateCountUpdated
+  JSR DecrementP1Rate
+  JSR DecrementP2Rate
+RateCountUpdated:
   JMP Forever     ;jump back to Forever, infinite loop
+
+DecrementP1Rate:
+  LDX p1_bp_rate_count
+  CPX #$00
+  BEQ DecrementP1RateDone
+  DEX
+  STX p1_bp_rate_count
+DecrementP1RateDone:
+  RTS
+
+DecrementP2Rate:
+  LDX p2_bp_rate_count
+  CPX #$00
+  BEQ DecrementP2RateDone
+  DEX
+  STX p2_bp_rate_count
+DecrementP2RateDone:
+  RTS
+
+IncrementP1Rate:
+  LDX p1_bp_rate_count
+  CPX #$08
+  BEQ IncrementP1RateDone
+  INX
+  STX p1_bp_rate_count
+IncrementP1RateDone:
+  RTS
+
+IncrementP2Rate:
+  LDX p2_bp_rate_count
+  CPX #$08
+  BEQ IncrementP2RateDone
+  INX
+  STX p2_bp_rate_count
+IncrementP2RateDone:
+  RTS
 
 IncrementScroll:
   LDX scroll
@@ -398,7 +451,9 @@ CalcButtonPresses:
   BNE P1DoneBPCalc ; branch if button not down
   LDA #$01
   STA p1_in_press ; button is pressed
-  LDX p1_bp_counter_ones ; We have a new press
+  ; We have a new press
+  JSR IncrementP1Rate
+  LDX p1_bp_counter_ones
   INX
   STX p1_bp_counter_ones
   CPX #$0A
@@ -426,6 +481,7 @@ P1DoneBPCalc:
   LDA p2_buttons_new_press
   AND mash_button
   BEQ P2DoneBPCalc ; branch if button not down
+  JSR IncrementP2Rate
   LDX p2_bp_counter_ones ; We have a new press
   INX
   STX p2_bp_counter_ones
@@ -854,6 +910,7 @@ LoadGame:
   STA game_over_frame_counter
   STA p1_in_press
   STA p2_in_press
+  STA p1_bp_rate_count
 
 LoadP1Sprites:
   LDX #$00              ; start at 0
@@ -892,6 +949,8 @@ LoadP1LabelLoop:
   CPX #$0C            ; 3 sprites
   BNE LoadP1LabelLoop
 
+  ;JSR P1RateDisplay
+
   RTS
 
 DisplayGameOver:
@@ -915,17 +974,77 @@ DisplayPressAnything:
   LDX #$00
 DisplayPressTextLoop:
   LDA press_text, x
-  STA $0264, x
+  STA $02BC, x
   INX
   CPX #$14 ; 20 -> 5 sprites
   BNE DisplayPressTextLoop
   LDX #$00
 DisplayAnythingTextLoop:
   LDA anything_text, x
-  STA $0278, x
+  STA $02D0, x
   INX
   CPX #$20 ; 32 -> 8 sprites
   BNE DisplayAnythingTextLoop
+  RTS
+
+RateDisplay:
+  JSR P1RateDisplay
+  LDA num_players
+  CMP #$02
+  BNE RateDisplaySkipP2
+  JSR P2RateDisplay
+RateDisplaySkipP2:
+  RTS
+
+;TODO small bug where if it goes back to 0, something shows up
+P1RateDisplay:
+  LDA p1_bp_rate_count
+  CMP #$00
+  BEQ P1RateHideLoop
+  ASL A
+  ASL A
+  STA bp_rate_count_times_4
+  LDX #$00
+P1RateDisplayLoop:
+  LDA p1_rate_meter, x
+  STA $027C, x
+  INX
+  CPX bp_rate_count_times_4 ; 32 -> 8 sprites
+  BNE P1RateDisplayLoop
+  CPX #$20
+  BEQ P1RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
+P1RateHideLoop:
+  LDA #$F8
+  STA $027C, x
+  INX
+  CPX #$20
+  BNE P1RateHideLoop ; TODO this will always write over the last sprite
+P1RateDisplayDone:
+  RTS
+
+P2RateDisplay:
+  LDA p2_bp_rate_count
+  CMP #$00
+  BEQ P2RateHideLoop
+  ASL A
+  ASL A
+  STA bp_rate_count_times_4
+  LDX #$00
+P2RateDisplayLoop:
+  LDA p2_rate_meter, x
+  STA $029C, x
+  INX
+  CPX bp_rate_count_times_4 ; 32 -> 8 sprites
+  BNE P2RateDisplayLoop
+  CPX $20
+  BEQ P2RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
+P2RateHideLoop:
+  LDA #$F8
+  STA $029C, x
+  INX
+  CPX #$20
+  BNE P2RateHideLoop ; TODO this will always write over the last sprite
+P2RateDisplayDone:
   RTS
 
 ; TODO there has to be a better way to do this
@@ -1174,6 +1293,29 @@ b_text
 
 down_b_text
   .db $0D, $18, $20, $17, $2A, $0B
+
+rate_meter ; TODO unused
+  .db $30, $31, $32, $33, $34, $35, $36, $37
+
+p1_rate_meter
+  .db $30, $30, $00, $58
+  .db $30, $31, $00, $60
+  .db $30, $32, $00, $68
+  .db $30, $33, $00, $70
+  .db $30, $34, $00, $78
+  .db $30, $35, $00, $80
+  .db $30, $36, $00, $88
+  .db $30, $37, $00, $90
+
+p2_rate_meter
+  .db $90, $30, $00, $58
+  .db $90, $31, $00, $60
+  .db $90, $32, $00, $68
+  .db $90, $33, $00, $70
+  .db $90, $34, $00, $78
+  .db $90, $35, $00, $80
+  .db $90, $36, $00, $88
+  .db $90, $37, $00, $90
 
 menu_background_1:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 1
