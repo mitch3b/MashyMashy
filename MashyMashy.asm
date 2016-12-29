@@ -1000,7 +1000,7 @@ DisplayFinalRate:
   JSR DisplayP2FinalRate
 DisplayFinalRateSkipP2:
   RTS
-  
+
 DisplayP1FinalRate:
   JSR CalculateP1FinalRate
   LDX #$00
@@ -1017,7 +1017,7 @@ DisplayP1FinalRateLoop:
   LDA p1_bp_rate_tenths
   STA $02D9
   RTS
-  
+
 DisplayP2FinalRate:
   JSR CalculateP2FinalRate
   LDX #$00
@@ -1529,8 +1529,8 @@ p1_final_rate
   .db $58, $00, $00, $B0   ;ones game timer
   .db $58, $AF, $00, $B8   ;decimal point
   .db $58, $00, $00, $C0   ;tenths game timer
-  .db $58, $7F, $00, $C8   ; slash
-  .db $58, $1C, $00, $D0   ; s  (for the '/s')
+  .db $58, $38, $00, $C8   ; slash
+  .db $58, $39, $00, $D0   ; s  (for the '/s')
 
 p1_rate_meter
   .db $30, $30, $00, $58
@@ -1541,14 +1541,14 @@ p1_rate_meter
   .db $30, $35, $00, $80
   .db $30, $36, $00, $88
   .db $30, $37, $00, $90
-  
+
 p2_final_rate
   .db $78, $00, $00, $A8   ;tens game timer
   .db $78, $00, $00, $B0   ;ones game timer
   .db $78, $AF, $00, $B8   ;decimal point
   .db $78, $00, $00, $C0   ;tenths game timer
-  .db $78, $7F, $00, $C8   ; slash
-  .db $78, $1C, $00, $D0   ; s  (for the '/s')
+  .db $78, $38, $00, $C8   ; slash
+  .db $78, $39, $00, $D0   ; s  (for the '/s')
 
 p2_rate_meter
   .db $90, $30, $00, $58
