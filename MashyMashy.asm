@@ -314,7 +314,7 @@ FrameProcessed:
   INX
   STX rate_count_frames
   TXA
-  AND #%00001111 ; on'y want to decrement so often
+  AND #%00000111 ; on'y want to decrement so often
   CMP #$00
   BNE RateCountUpdated
   JSR DecrementP1Rate
@@ -423,6 +423,7 @@ GameLogicPlay:
   LDA #GAME_OVER
   STA game_state
   JSR DisplayGameOver
+  JSR DisplayFinalRate
 EndGameLogic:
   RTI             ; return from interrupt
 
@@ -545,10 +546,9 @@ GameOverLogic:
   STX game_over_frame_counter
   JMP GameOverLogicDone
 GameOverWaitDone:
-  JSR DisplayPressAnything
-  JSR DisplayP1FinalRate
+  JSR DisplayPressStart
   LDA p1_buttons_new_press
-  CMP #$00
+  AND #BUTTON_START
   BEQ GameOverLogicDone
   ;; Wait is over and button is pressed so go back to menu
   LDA #GAME_SCROLL_TO_MENU
@@ -956,9 +956,6 @@ LoadP1LabelLoop:
   INX
   CPX #$0C            ; 3 sprites
   BNE LoadP1LabelLoop
-
-  ;JSR P1RateDisplay
-
   RTS
 
 DisplayGameOver:
@@ -978,38 +975,65 @@ DisplayOverTextLoop:
   BNE DisplayOverTextLoop
   RTS
 
-DisplayPressAnything:
+DisplayPressStart:
   LDX #$00
 DisplayPressTextLoop:
   LDA press_text, x
-  STA $02BC, x
+  STA $02A4, x
   INX
   CPX #$14 ; 20 -> 5 sprites
   BNE DisplayPressTextLoop
   LDX #$00
 DisplayStartTextLoop:
   LDA start_press_text, x
-  STA $02D0, x
+  STA $02B8, x
   INX
-  CPX #$20 ; 20 -> 5 sprites
+  CPX #$14 ; 20 -> 5 sprites
   BNE DisplayStartTextLoop
   RTS
 
+DisplayFinalRate:
+  JSR DisplayP1FinalRate
+  LDA num_players
+  CMP #$02
+  BNE DisplayFinalRateSkipP2
+  JSR DisplayP2FinalRate
+DisplayFinalRateSkipP2:
+  RTS
+  
 DisplayP1FinalRate:
   JSR CalculateP1FinalRate
   LDX #$00
 DisplayP1FinalRateLoop:
   LDA p1_final_rate, x
-  STA $02E0, x
+  STA $02CC, x
   INX
-  CPX #$10
+  CPX #$18      ; 6 sprites, but skip decimal below
   BNE DisplayP1FinalRateLoop
   LDA p1_bp_rate_tens
-  STA $02E1
+  STA $02CD
   LDA p1_bp_rate_ones
-  STA $02E5
+  STA $02D1
   LDA p1_bp_rate_tenths
-  STA $02ED
+  STA $02D9
+  RTS
+  
+DisplayP2FinalRate:
+  JSR CalculateP2FinalRate
+  LDX #$00
+DisplayP2FinalRateLoop:
+  LDA p2_final_rate, x
+  STA $02E4, x
+  INX
+  CPX #$18     ; 4 sprites, but skip decimal below
+  BNE DisplayP2FinalRateLoop
+  LDA p2_bp_rate_tens
+  STA $02E5
+  LDA p2_bp_rate_ones
+  STA $02E9
+  LDA p2_bp_rate_tenths
+  STA $02F1
+DisplayP2FinalRateDone:
   RTS
 
 CalculateP1FinalRate
@@ -1213,7 +1237,7 @@ P1RateDisplay:
   LDX #$00
 P1RateDisplayLoop:
   LDA p1_rate_meter, x
-  STA $027C, x
+  STA $0264, x
   INX
   CPX bp_rate_count_times_4 ; 32 -> 8 sprites
   BNE P1RateDisplayLoop
@@ -1221,7 +1245,7 @@ P1RateDisplayLoop:
   BEQ P1RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
 P1RateHideLoop:
   LDA #$F8
-  STA $027C, x
+  STA $0264, x
   INX
   CPX #$20
   BNE P1RateHideLoop ; TODO this will always write over the last sprite
@@ -1238,7 +1262,7 @@ P2RateDisplay:
   LDX #$00
 P2RateDisplayLoop:
   LDA p2_rate_meter, x
-  STA $029C, x
+  STA $0284, x
   INX
   CPX bp_rate_count_times_4 ; 32 -> 8 sprites
   BNE P2RateDisplayLoop
@@ -1246,7 +1270,7 @@ P2RateDisplayLoop:
   BEQ P2RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
 P2RateHideLoop:
   LDA #$F8
-  STA $029C, x
+  STA $0284, x
   INX
   CPX #$20
   BNE P2RateHideLoop ; TODO this will always write over the last sprite
@@ -1505,6 +1529,8 @@ p1_final_rate
   .db $58, $00, $00, $B0   ;ones game timer
   .db $58, $AF, $00, $B8   ;decimal point
   .db $58, $00, $00, $C0   ;tenths game timer
+  .db $58, $7F, $00, $C8   ; slash
+  .db $58, $1C, $00, $D0   ; s  (for the '/s')
 
 p1_rate_meter
   .db $30, $30, $00, $58
@@ -1515,6 +1541,14 @@ p1_rate_meter
   .db $30, $35, $00, $80
   .db $30, $36, $00, $88
   .db $30, $37, $00, $90
+  
+p2_final_rate
+  .db $78, $00, $00, $A8   ;tens game timer
+  .db $78, $00, $00, $B0   ;ones game timer
+  .db $78, $AF, $00, $B8   ;decimal point
+  .db $78, $00, $00, $C0   ;tenths game timer
+  .db $78, $7F, $00, $C8   ; slash
+  .db $78, $1C, $00, $D0   ; s  (for the '/s')
 
 p2_rate_meter
   .db $90, $30, $00, $58
