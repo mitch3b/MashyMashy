@@ -107,6 +107,13 @@ p1_bp_rate_count .rs 1;
 p2_bp_rate_count .rs 1;
 bp_rate_count_times_4 .rs 1; TODO don't know how to do this any other way
 
+;TODO this is the best way i can think to store the calculated values
+p1_bp_rate_ones .rs 1;
+p1_bp_rate_tens .rs 1;
+p1_bp_rate_tenths .rs 1;
+p2_bp_rate_ones .rs 1;
+p2_bp_rate_tens .rs 1;
+p2_bp_rate_tenths .rs 1;
 
 menu_game_time_s_ones .rs 1
 menu_game_time_s_tens .rs 1
@@ -539,6 +546,7 @@ GameOverLogic:
   JMP GameOverLogicDone
 GameOverWaitDone:
   JSR DisplayPressAnything
+  JSR DisplayP1FinalRate
   LDA p1_buttons_new_press
   CMP #$00
   BEQ GameOverLogicDone
@@ -979,13 +987,211 @@ DisplayPressTextLoop:
   CPX #$14 ; 20 -> 5 sprites
   BNE DisplayPressTextLoop
   LDX #$00
-DisplayAnythingTextLoop:
-  LDA anything_text, x
+DisplayStartTextLoop:
+  LDA start_press_text, x
   STA $02D0, x
   INX
-  CPX #$20 ; 32 -> 8 sprites
-  BNE DisplayAnythingTextLoop
+  CPX #$20 ; 20 -> 5 sprites
+  BNE DisplayStartTextLoop
   RTS
+
+DisplayP1FinalRate:
+  JSR CalculateP1FinalRate
+  LDX #$00
+DisplayP1FinalRateLoop:
+  LDA p1_final_rate, x
+  STA $02E0, x
+  INX
+  CPX #$10
+  BNE DisplayP1FinalRateLoop
+  LDA p1_bp_rate_tens
+  STA $02E1
+  LDA p1_bp_rate_ones
+  STA $02E5
+  LDA p1_bp_rate_tenths
+  STA $02ED
+  RTS
+
+CalculateP1FinalRate
+  LDA menu_game_time_s_ones
+  CMP #$01
+  BNE CalculateP1FinalRateTry2
+  JSR CalculateP1FinalRate_1_Sec
+  JMP CalculateP1FinalRateDone
+CalculateP1FinalRateTry2:
+  CMP #$02
+  BNE CalculateP1FinalRateTry5
+  JSR CalculateP1FinalRate_2_Sec
+  JMP CalculateP1FinalRateDone
+CalculateP1FinalRateTry5:
+  CMP #$05
+  BNE CalculateP1FinalRateTry10
+  JSR CalculateP1FinalRate_5_Sec
+  JMP CalculateP1FinalRateDone
+CalculateP1FinalRateTry10: ; None left so it is 10
+  JSR CalculateP1FinalRate_10_Sec
+CalculateP1FinalRateDone:
+  RTS
+
+CalculateP1FinalRate_1_Sec:
+  LDA p1_bp_counter_ones
+  STA p1_bp_rate_ones
+  LDA p1_bp_counter_tens
+  STA p1_bp_rate_tens
+  LDA #$00
+  STA p1_bp_rate_tenths
+  RTS
+
+CalculateP1FinalRate_2_Sec: ; 2x30 = 60 max
+  LDA p1_bp_counter_ones
+  LSR A
+  STA p1_bp_rate_ones ; TODO account for odd tens
+  LDA #$00
+  STA p1_bp_rate_tenths
+  BCC P1FinalRate2SecNoOnesCarry ; if ones shift left a carry, add 5 to tenths
+  CLC
+  ADC #$05
+  STA p1_bp_rate_tenths
+P1FinalRate2SecNoOnesCarry:
+  LDA p1_bp_counter_tens
+  LSR A
+  STA p1_bp_rate_tens
+  BCC P1FinalRate2SecNoTensCarry
+  LDA p1_bp_rate_ones ; Add the 5 carry over
+  CLC
+  ADC #$05
+  STA p1_bp_rate_ones
+P1FinalRate2SecNoTensCarry:
+  RTS
+
+CalculateP1FinalRate_5_Sec: ; max is 5*30 = 150. Mult by 2 then divide by 10
+  LDA p1_bp_counter_hundreds
+  ASL A
+  STA p1_bp_rate_tens
+  LDA p1_bp_counter_tens
+  ASL A
+  STA p1_bp_rate_ones
+  CMP #$0A
+  BCC CalcP1FinalRate5SecTensLess10
+  SBC #$0A ; Shouldn't be more than 18 so only need to subtract 10
+  STA p1_bp_rate_ones
+  LDX p1_bp_rate_tens
+  INX
+  STX p1_bp_rate_tens
+CalcP1FinalRate5SecTensLess10:
+  LDA p1_bp_counter_ones
+  ASL A
+  STA p1_bp_rate_tenths
+  CMP #$0A
+  BCC CalcP1FinalRateDone
+  SBC #$0A
+  STA p1_bp_rate_tenths
+  LDX p1_bp_rate_ones
+  INX
+  STX p1_bp_rate_ones
+CalcP1FinalRateDone:
+  RTS
+
+CalculateP1FinalRate_10_Sec:
+  LDA p1_bp_counter_hundreds
+  STA p1_bp_rate_tens
+  LDA p1_bp_counter_tens
+  STA p1_bp_rate_ones
+  LDA p1_bp_counter_ones
+  STA p1_bp_rate_tenths
+  RTS
+
+; TODO there has to be a better way than duplicating all this logic for the p2 rate
+CalculateP2FinalRate
+  LDA menu_game_time_s_ones
+  CMP #$01
+  BNE CalculateP2FinalRateTry2
+  JSR CalculateP2FinalRate_1_Sec
+  JMP CalculateP2FinalRateDone
+CalculateP2FinalRateTry2:
+  CMP #$02
+  BNE CalculateP2FinalRateTry5
+  JSR CalculateP2FinalRate_2_Sec
+  JMP CalculateP2FinalRateDone
+CalculateP2FinalRateTry5:
+  CMP #$05
+  BNE CalculateP2FinalRateTry10
+  JSR CalculateP2FinalRate_5_Sec
+  JMP CalculateP2FinalRateDone
+CalculateP2FinalRateTry10: ; None left so it is 10
+  JSR CalculateP2FinalRate_10_Sec
+CalculateP2FinalRateDone:
+  RTS
+
+CalculateP2FinalRate_1_Sec:
+  LDA p2_bp_counter_ones
+  STA p2_bp_rate_ones
+  LDA p2_bp_counter_tens
+  STA p2_bp_rate_tens
+  LDA #$00
+  STA p2_bp_rate_tenths
+  RTS
+
+CalculateP2FinalRate_2_Sec: ; 2x30 = 60 max
+  LDA p2_bp_counter_ones
+  LSR A
+  STA p2_bp_rate_ones ; TODO account for odd tens
+  LDA #$00
+  STA p2_bp_rate_tenths
+  BCC P2FinalRate2SecNoOnesCarry ; if ones shift left a carry, add 5 to tenths
+  CLC
+  ADC #$05
+  STA p2_bp_rate_tenths
+P2FinalRate2SecNoOnesCarry:
+  LDA p2_bp_counter_tens
+  LSR A
+  STA p2_bp_rate_tens
+  BCC P2FinalRate2SecNoTensCarry
+  LDA p2_bp_rate_ones ; Add the 5 carry over
+  CLC
+  ADC #$05
+  STA p2_bp_rate_ones
+P2FinalRate2SecNoTensCarry:
+  RTS
+
+CalculateP2FinalRate_5_Sec: ; max is 5*30 = 150. Mult by 2 then divide by 10
+  LDA p2_bp_counter_hundreds
+  ASL A
+  STA p2_bp_rate_tens
+  LDA p2_bp_counter_tens
+  ASL A
+  STA p2_bp_rate_ones
+  CMP #$0A
+  BCC CalcP2FinalRate5SecTensLess10
+  SBC #$0A ; Shouldn't be more than 18 so only need to subtract 10
+  STA p2_bp_rate_ones
+  LDX p2_bp_rate_tens
+  INX
+  STX p2_bp_rate_tens
+CalcP2FinalRate5SecTensLess10:
+  LDA p2_bp_counter_ones
+  ASL A
+  STA p2_bp_rate_tenths
+  CMP #$0A
+  BCC CalcP2FinalRateDone
+  SBC #$0A
+  STA p2_bp_rate_tenths
+  LDX p2_bp_rate_ones
+  INX
+  STX p2_bp_rate_ones
+CalcP2FinalRateDone:
+  RTS
+
+CalculateP2FinalRate_10_Sec:
+  LDA p1_bp_counter_hundreds
+  STA p1_bp_rate_tens
+  LDA p1_bp_counter_tens
+  STA p1_bp_rate_ones
+  LDA p1_bp_counter_ones
+  STA p1_bp_rate_tenths
+  RTS
+
+  ; End p2 rate logic
 
 RateDisplay:
   JSR P1RateDisplay
@@ -1257,15 +1463,12 @@ press_text
   .db $B0, $1C, $00, $80
   .db $B0, $1C, $00, $88
 
-anything_text
-  .db $B8, $0A, $00, $5C
-  .db $B8, $17, $00, $64
-  .db $B8, $22, $00, $6C
-  .db $B8, $1D, $00, $74
-  .db $B8, $11, $00, $7C
-  .db $B8, $12, $00, $84
-  .db $B8, $17, $00, $8C
-  .db $B8, $10, $00, $94
+start_press_text ; Don't love this name, but start_text is already used
+  .db $B8, $1C, $00, $68
+  .db $B8, $1D, $00, $70
+  .db $B8, $0A, $00, $78
+  .db $B8, $1B, $00, $80
+  .db $B8, $1D, $00, $88
 
 up_text
   .db $1E, $19, $24, $24, $24, $24
@@ -1296,6 +1499,12 @@ down_b_text
 
 rate_meter ; TODO unused
   .db $30, $31, $32, $33, $34, $35, $36, $37
+
+p1_final_rate
+  .db $58, $00, $00, $A8   ;tens game timer
+  .db $58, $00, $00, $B0   ;ones game timer
+  .db $58, $AF, $00, $B8   ;decimal point
+  .db $58, $00, $00, $C0   ;tenths game timer
 
 p1_rate_meter
   .db $30, $30, $00, $58
