@@ -225,19 +225,33 @@ LoadPalettesLoop:
                         ; if compare was equal to 32, keep going down
 
 ; if compare was equal to 128, keep going down
-LoadAttribute:
+LoadMenuAttribute:
   LDA $2002             ; read PPU status to reset the high/low latch
   LDA #$23
   STA PPU_ADDRESS       ; write the high byte of $23C0 address
   LDA #$C0
   STA PPU_ADDRESS       ; write the low byte of $23C0 address
   LDX #$00              ; start out at 0
-LoadAttributeLoop:
-  LDA attribute, x      ; load data from address (attribute + the value in x)
+LoadMenuAttributeLoop:
+  LDA #$00              ; normally load data from address (attribute + the value in x)
   STA $2007             ; write to PPU
   INX                   ; X = X + 1
-  CPX #$08              ; Compare X to hex $08, decimal 8 - copying 8 bytes
-  BNE LoadAttributeLoop
+  CPX #$80              ; 64 total bytes necessary to do full screen
+  BNE LoadMenuAttributeLoop
+
+LoadGameAttribute:
+  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA #$27
+  STA PPU_ADDRESS       ; write the high byte of $23C0 address
+  LDA #$C0
+  STA PPU_ADDRESS       ; write the low byte of $23C0 address
+  LDX #$00              ; start out at 0
+LoadGameAttributeLoop:
+  LDA #$00              ; normally load data from address (attribute + the value in x)
+  STA $2007             ; write to PPU
+  INX                   ; X = X + 1
+  CPX #$80              ; 64 total bytes necessary to do full screen
+  BNE LoadGameAttributeLoop
 
   JSR DisplayScreen0
 
