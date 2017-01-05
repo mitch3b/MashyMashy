@@ -931,7 +931,6 @@ LoadGameBackgroundRow:
   ADC #LOW(game_background)
   STA background_data_low
   LDA background_high
-  CLC
   ADC #HIGH(game_background)
   SEC
   SBC #$24      ; really hacky, but high has the extra 24 tacked on because its a ppu address
