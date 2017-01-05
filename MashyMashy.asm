@@ -131,9 +131,12 @@ game_timer_tens .rs 1
 mash_button .rs 1;
 new_frame .rs 1;
 scroll .rs 1;
-background_pointer .rs 1 ; used to track where in the background data we left off
-background_high .rs 1 ;
+menu_background_needs_loading .rs 1; not sure better way to do this
+background_row .rs 1 ; used to track where in the background data we left off in terms of row number
+background_high .rs 1 ; used as local vars to figure out which ppu address to write to
 background_low .rs 1 ;
+background_data_low .rs 1 ; used to track where in the background data we left off
+background_data_high .rs 1
 
 ; Menu values
 NUM_PLAYERS_1_X = $70
@@ -261,7 +264,7 @@ LoadGameAttributeLoop:
 
   LDA #$00
   STA scroll
-  STA background_pointer
+  STA background_row
   JSR PushScrollToPPU
   JSR DisplayScreen1
 
@@ -323,6 +326,7 @@ TryMenu:
   LDA game_state
   CMP #GAME_MENU
   BNE TryGameOver
+  JSR QueueGameBackground
   JSR MenuLogic
   JMP FrameProcessed
 TryGameOver:
@@ -899,14 +903,14 @@ LoadMenuBackground4Loop:
 
 LoadGameBackgroundRow:
   ; 256 / (4 bytes per sprite) = 64 bytes per low pointer locations
-  LDA background_pointer
+  LDA background_row
   LSR A
   LSR A
   LSR A  ; divide by 8 to get the high pointer location
   CLC
   ADC #$24                   ; all highs start at 24 (low starts at 0)
   STA background_high
-  LDA background_pointer
+  LDA background_row
   AND #%00001111           ; take mod 8 to get the low pointer location
   CLC
   ASL A
@@ -915,25 +919,38 @@ LoadGameBackgroundRow:
   ASL A
   ASL A                    ; multiply by 32 to get the starting low point
   STA background_low
+  ;; Setup the location to write to
   LDA PPU_STATUS
   LDA background_high
   STA PPU_ADDRESS
   LDA background_low
   STA PPU_ADDRESS
-  LDX #$00
+  ;; Setup the background data to write to it
+  LDA background_low
+  CLC
+  ADC #LOW(game_background)
+  STA background_data_low
+  LDA background_high
+  CLC
+  ADC #HIGH(game_background)
+  SEC
+  SBC #$24      ; really hacky, but high has the extra 24 tacked on because its a ppu address
+  STA background_data_high
+  LDY #$00
 LoadGameBackgroundRowLoop:
-  LDA background_pointer
+  LDA [background_data_low], y
   STA $2007
-  INX
-  CPX #$20 ; 32
+  INY
+  CPY #$20 ; 32
   BNE LoadGameBackgroundRowLoop
-  LDX background_pointer
+  LDX background_row
   INX
-  STX background_pointer
+  STX background_row
   CPX #$1E  ; 31 (would be 30, but we just incremented background pointer again
   BNE LoadGameBackgroundRowDone
   LDX #$00
-  STX background_pointer
+  STX menu_background_needs_loading
+  STX background_row
 LoadGameBackgroundRowDone:
   LDA #$00
   STA PPU_SCROLL_REG
@@ -944,21 +961,22 @@ TitleLogic:
   LDA p1_buttons_new_press
   CMP #$00
   BEQ TitleLogicDone
-  JSR ToggleOutOfTitle
+  LDA #GAME_MENU
+  STA game_state
+  LDA #$01
+  STA menu_background_needs_loading ; mark menu to be loaded
+  JSR LoadMenu
   JSR DisplayScreen0
 TitleLogicDone:
   RTS
 
-ToggleOutOfTitle:
-  JSR LoadGameBackgroundRow
-  LDA background_pointer
+QueueGameBackground:
+  LDA menu_background_needs_loading
   CMP #$00
-  BNE ToggleOutOfTitleDone
-DoneTogglingOutOfTitle:
-  LDA #GAME_MENU
-  STA game_state
-  JSR LoadMenu
-ToggleOutOfTitleDone:
+  BEQ QueueGameBackgroundDone
+  JSR LoadGameBackgroundRow
+  JSR DisplayScreen0 ; don't know why above is changing screen, but this will fix it
+QueueGameBackgroundDone:
   RTS
 
 LoadTitleBackground:
@@ -969,25 +987,25 @@ LoadTitleBackground:
   STA PPU_ADDRESS
   LDX #$00
 LoadTitleBackground1Loop:
-  LDA game_background_1, x
+  LDA menu_background_2, x
   STA $2007
   INX
   CPX #$00
   BNE LoadTitleBackground1Loop
 LoadTitleBackground2Loop:
-  LDA game_background_1, x
+  LDA menu_background_2, x
   STA $2007
   INX
   CPX #$00
   BNE LoadTitleBackground2Loop
 LoadTitleBackground3Loop:
-  LDA game_background_1, x
+  LDA menu_background_2, x
   STA $2007
   INX
   CPX #$00
   BNE LoadTitleBackground3Loop
 LoadTitleBackground4Loop:
-  LDA game_background_1, x
+  LDA menu_background_2, x
   STA $2007
   INX
   CPX #$C0
@@ -1711,7 +1729,7 @@ menu_background_4:
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 30
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
 
-game_background_1:
+game_background:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 1
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 2
@@ -1728,7 +1746,6 @@ game_background_1:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 8
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-game_background_2:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 9
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$24,$24,$24,$24  ;;row 10
@@ -1745,7 +1762,6 @@ game_background_2:
   .db $24,$24,$24,$24,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$24,$24,$24,$24  ;;row 16
   .db $24,$24,$24,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-game_background_3:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 17
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 18
@@ -1762,7 +1778,6 @@ game_background_3:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 24
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-game_background_4:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 25
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 26
