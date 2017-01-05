@@ -239,7 +239,7 @@ LoadMenuAttributeLoop:
   LDA #$00              ; normally load data from address (attribute + the value in x)
   STA $2007             ; write to PPU
   INX                   ; X = X + 1
-  CPX #$80              ; 64 total bytes necessary to do full screen
+  CPX #$40              ; 64 total bytes necessary to do full screen
   BNE LoadMenuAttributeLoop
 
 LoadGameAttribute:
@@ -253,7 +253,7 @@ LoadGameAttributeLoop:
   LDA #$00              ; normally load data from address (attribute + the value in x)
   STA $2007             ; write to PPU
   INX                   ; X = X + 1
-  CPX #$80              ; 64 total bytes necessary to do full screen
+  CPX #$40              ; 64 total bytes necessary to do full screen
   BNE LoadGameAttributeLoop
 
   LDA #%00011110   ; enable sprites, enable background, no clipping on left side
@@ -900,19 +900,23 @@ LoadMenuBackground4Loop:
 LoadGameBackgroundRow:
   ; 256 / (4 bytes per sprite) = 64 bytes per low pointer locations
   LDA background_pointer
+  LSR A
+  LSR A
+  LSR A  ; divide by 8 to get the high pointer location
+  CLC
+  ADC #$24                   ; all highs start at 24 (low starts at 0)
+  STA background_high
+  LDA background_pointer
+  AND #%00001111           ; take mod 8 to get the low pointer location
   CLC
   ASL A
   ASL A
-  ASL A                      ; divide by 8 to get the high pointer location
-  STA background_high
-  LDA background_pointer
-  AND #%00000111           ; take mod 8 to get the low pointer location
+  ASL A
+  ASL A
+  ASL A                    ; multiply by 32 to get the starting low point
   STA background_low
   LDA PPU_STATUS
   LDA background_high
-  ;CLC
-  ;ADC #$24                 ; high starts at 24
-  LDA #$24
   STA PPU_ADDRESS
   LDA background_low
   STA PPU_ADDRESS
@@ -921,24 +925,27 @@ LoadGameBackgroundRowLoop:
   LDA background_pointer
   STA $2007
   INX
-  CPX #$1D ; 30
+  CPX #$20 ; 32
   BNE LoadGameBackgroundRowLoop
   LDX background_pointer
   INX
   STX background_pointer
-  CPX #$30
+  CPX #$1E  ; 31 (would be 30, but we just incremented background pointer again
   BNE LoadGameBackgroundRowDone
-  ;LDX #$00
-  ;STX background_pointer
+  LDX #$00
+  STX background_pointer
 LoadGameBackgroundRowDone:
+  LDA #$00
+  STA PPU_SCROLL_REG
+  STA PPU_SCROLL_REG
   RTS
 
 TitleLogic:
   LDA p1_buttons_new_press
   CMP #$00
   BEQ TitleLogicDone
-  JSR DisplayScreen0
   JSR ToggleOutOfTitle
+  JSR DisplayScreen0
 TitleLogicDone:
   RTS
 
