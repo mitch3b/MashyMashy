@@ -70,6 +70,8 @@ game_over_frame_counter .rs 1
 
 num_players .rs 1 ;
 
+NoiseSoundBuffer .rs 1
+
 ; What bit each button is stored in a controller byte
 BUTTON_A      = %10000000
 BUTTON_B      = %01000000
@@ -129,6 +131,9 @@ game_timer_tens .rs 1
 mash_button .rs 1;
 new_frame .rs 1;
 scroll .rs 1;
+background_pointer .rs 1 ; used to track where in the background data we left off
+background_high .rs 1 ;
+background_low .rs 1 ;
 
 ; Menu values
 NUM_PLAYERS_1_X = $70
@@ -195,15 +200,13 @@ InitState:
   LDA #BUTTON_A
   STA mash_button
 
-  LDA #GAME_MENU
+  LDA #GAME_TITLE
   STA game_state
-  LDA #GAME_MENU ; TODO want states to disagree so that it'll load the first time
+  LDA #GAME_TITLE ; TODO want states to disagree so that it'll load the first time
   STA prev_game_state
 
-  JSR LoadMenu
-  ; Don't ever overwrite background so just write them once
   JSR LoadMenuBackground
-  JSR LoadGameBackground
+  JSR LoadTitleBackground
 
 LoadPalettes:
   LDA PPU_STATUS        ; read PPU status to reset the high/low latch
@@ -253,14 +256,14 @@ LoadGameAttributeLoop:
   CPX #$80              ; 64 total bytes necessary to do full screen
   BNE LoadGameAttributeLoop
 
-  JSR DisplayScreen0
-
   LDA #%00011110   ; enable sprites, enable background, no clipping on left side
   STA PPU_CTRL_REG2
 
   LDA #$00
   STA scroll
+  STA background_pointer
   JSR PushScrollToPPU
+  JSR DisplayScreen1
 
 Forever:
   LDA new_frame
@@ -269,6 +272,11 @@ Forever:
 ProcessFrame:
   LDA #00
   STA new_frame ; reset new frame
+  LDA game_state
+  CMP #GAME_TITLE
+  BNE NotTitleLogic
+  JSR TitleLogic
+NotTitleLogic:
   LDA game_state
   CMP #GAME_SCROLL_TO_GAME
   BNE NotScrollingRight
@@ -889,37 +897,94 @@ LoadMenuBackground4Loop:
   BNE LoadMenuBackground4Loop  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
   RTS
 
-LoadGameBackground:
+LoadGameBackgroundRow:
+  ; 256 / (4 bytes per sprite) = 64 bytes per low pointer locations
+  LDA background_pointer
+  CLC
+  ASL A
+  ASL A
+  ASL A                      ; divide by 8 to get the high pointer location
+  STA background_high
+  LDA background_pointer
+  AND #%00000111           ; take mod 8 to get the low pointer location
+  STA background_low
+  LDA PPU_STATUS
+  LDA background_high
+  ;CLC
+  ;ADC #$24                 ; high starts at 24
+  LDA #$24
+  STA PPU_ADDRESS
+  LDA background_low
+  STA PPU_ADDRESS
+  LDX #$00
+LoadGameBackgroundRowLoop:
+  LDA background_pointer
+  STA $2007
+  INX
+  CPX #$1D ; 30
+  BNE LoadGameBackgroundRowLoop
+  LDX background_pointer
+  INX
+  STX background_pointer
+  CPX #$30
+  BNE LoadGameBackgroundRowDone
+  ;LDX #$00
+  ;STX background_pointer
+LoadGameBackgroundRowDone:
+  RTS
+
+TitleLogic:
+  LDA p1_buttons_new_press
+  CMP #$00
+  BEQ TitleLogicDone
+  JSR DisplayScreen0
+  JSR ToggleOutOfTitle
+TitleLogicDone:
+  RTS
+
+ToggleOutOfTitle:
+  JSR LoadGameBackgroundRow
+  LDA background_pointer
+  CMP #$00
+  BNE ToggleOutOfTitleDone
+DoneTogglingOutOfTitle:
+  LDA #GAME_MENU
+  STA game_state
+  JSR LoadMenu
+ToggleOutOfTitleDone:
+  RTS
+
+LoadTitleBackground:
   LDA PPU_STATUS
   LDA #$24
   STA PPU_ADDRESS
   LDA #$00
   STA PPU_ADDRESS
   LDX #$00
-LoadGameBackground1Loop:
+LoadTitleBackground1Loop:
   LDA game_background_1, x
   STA $2007
   INX
   CPX #$00
-  BNE LoadGameBackground1Loop
-LoadGameBackground2Loop:
-  LDA game_background_2, x
+  BNE LoadTitleBackground1Loop
+LoadTitleBackground2Loop:
+  LDA game_background_1, x
   STA $2007
   INX
   CPX #$00
-  BNE LoadGameBackground2Loop
-LoadGameBackground3Loop:
-  LDA game_background_3, x
+  BNE LoadTitleBackground2Loop
+LoadTitleBackground3Loop:
+  LDA game_background_1, x
   STA $2007
   INX
   CPX #$00
-  BNE LoadGameBackground3Loop
-LoadGameBackground4Loop:
-  LDA game_background_4, x
+  BNE LoadTitleBackground3Loop
+LoadTitleBackground4Loop:
+  LDA game_background_1, x
   STA $2007
   INX
   CPX #$C0
-  BNE LoadGameBackground4Loop
+  BNE LoadTitleBackground4Loop
   RTS
 
 LoadGame:
