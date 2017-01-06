@@ -962,12 +962,12 @@ LoadGameBackgroundRowLoop:
   LDA [background_data_low], y
   STA $2007
   INY
-  CPY #$20 ; 32
+  CPY #$40 ; 64
   BNE LoadGameBackgroundRowLoop
   LDX background_row
   INX
   STX background_row
-  CPX #$1E  ; 31 (would be 30, but we just incremented background pointer again
+  CPX #$1E  ; 30
   BNE LoadGameBackgroundRowDone
   LDX #$00
   STX menu_background_needs_loading
