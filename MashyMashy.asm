@@ -65,10 +65,12 @@ GAME_OVER = 4
 GAME_SCROLL_TO_GAME = 5
 GAME_SCROLL_TO_MENU = 6
 
-GAME_OVER_WAIT_FRAMES = 120
+GAME_OVER_WAIT_FRAMES = 60
 game_over_frame_counter .rs 1
 
 num_players .rs 1 ;
+
+NoiseSoundBuffer .rs 1
 
 ; What bit each button is stored in a controller byte
 BUTTON_A      = %10000000
@@ -129,6 +131,12 @@ game_timer_tens .rs 1
 mash_button .rs 1;
 new_frame .rs 1;
 scroll .rs 1;
+menu_background_needs_loading .rs 1; not sure better way to do this
+background_row .rs 1 ; used to track where in the background data we left off in terms of row number
+background_high .rs 1 ; used as local vars to figure out which ppu address to write to
+background_low .rs 1 ;
+background_data_low .rs 1 ; used to track where in the background data we left off
+background_data_high .rs 1
 
 ; Menu values
 NUM_PLAYERS_1_X = $70
@@ -195,15 +203,13 @@ InitState:
   LDA #BUTTON_A
   STA mash_button
 
-  LDA #GAME_MENU
+  LDA #GAME_TITLE
   STA game_state
-  LDA #GAME_MENU ; TODO want states to disagree so that it'll load the first time
+  LDA #GAME_TITLE ; TODO want states to disagree so that it'll load the first time
   STA prev_game_state
 
-  JSR LoadMenu
-  ; Don't ever overwrite background so just write them once
   JSR LoadMenuBackground
-  JSR LoadGameBackground
+  JSR LoadTitleBackground
 
 LoadPalettes:
   LDA PPU_STATUS        ; read PPU status to reset the high/low latch
@@ -214,10 +220,6 @@ LoadPalettes:
   LDX #$00              ; start out at 0
 LoadPalettesLoop:
   LDA palette, x        ; load data from address (palette + the value in x)
-                          ; 1st time through loop it will load palette+0
-                          ; 2nd time through loop it will load palette+1
-                          ; 3rd time through loop it will load palette+2
-                          ; etc
   STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$20              ; Compare X to hex $10, decimal 16 - copying 16 bytes = 4 sprites
@@ -225,42 +227,17 @@ LoadPalettesLoop:
                         ; if compare was equal to 32, keep going down
 
 ; if compare was equal to 128, keep going down
-LoadMenuAttribute:
-  LDA $2002             ; read PPU status to reset the high/low latch
-  LDA #$23
-  STA PPU_ADDRESS       ; write the high byte of $23C0 address
-  LDA #$C0
-  STA PPU_ADDRESS       ; write the low byte of $23C0 address
-  LDX #$00              ; start out at 0
-LoadMenuAttributeLoop:
-  LDA #$00              ; normally load data from address (attribute + the value in x)
-  STA $2007             ; write to PPU
-  INX                   ; X = X + 1
-  CPX #$80              ; 64 total bytes necessary to do full screen
-  BNE LoadMenuAttributeLoop
-
-LoadGameAttribute:
-  LDA $2002             ; read PPU status to reset the high/low latch
-  LDA #$27
-  STA PPU_ADDRESS       ; write the high byte of $23C0 address
-  LDA #$C0
-  STA PPU_ADDRESS       ; write the low byte of $23C0 address
-  LDX #$00              ; start out at 0
-LoadGameAttributeLoop:
-  LDA #$00              ; normally load data from address (attribute + the value in x)
-  STA $2007             ; write to PPU
-  INX                   ; X = X + 1
-  CPX #$80              ; 64 total bytes necessary to do full screen
-  BNE LoadGameAttributeLoop
-
-  JSR DisplayScreen0
+  JSR LoadMenuAttribute
+  JSR LoadTitleAttribute
 
   LDA #%00011110   ; enable sprites, enable background, no clipping on left side
   STA PPU_CTRL_REG2
 
   LDA #$00
   STA scroll
+  STA background_row
   JSR PushScrollToPPU
+  JSR DisplayTitleScreen
 
 Forever:
   LDA new_frame
@@ -269,6 +246,11 @@ Forever:
 ProcessFrame:
   LDA #00
   STA new_frame ; reset new frame
+  LDA game_state
+  CMP #GAME_TITLE
+  BNE NotTitleLogic
+  JSR TitleLogic
+NotTitleLogic:
   LDA game_state
   CMP #GAME_SCROLL_TO_GAME
   BNE NotScrollingRight
@@ -315,6 +297,7 @@ TryMenu:
   LDA game_state
   CMP #GAME_MENU
   BNE TryGameOver
+  JSR QueueGameBackground
   JSR MenuLogic
   JMP FrameProcessed
 TryGameOver:
@@ -335,6 +318,51 @@ FrameProcessed:
   JSR DecrementP2Rate
 RateCountUpdated:
   JMP Forever     ;jump back to Forever, infinite loop
+
+LoadMenuAttribute:
+  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA #$23
+  STA PPU_ADDRESS       ; write the high byte of $23C0 address
+  LDA #$C0
+  STA PPU_ADDRESS       ; write the low byte of $23C0 address
+  LDX #$00              ; start out at 0
+LoadMenuAttributeLoop:
+  LDA game_attribute, x      ; normally load data from address (attribute + the value in x)
+  STA $2007             ; write to PPU
+  INX                   ; X = X + 1
+  CPX #$40              ; 64 total bytes necessary to do full screen
+  BNE LoadMenuAttributeLoop
+  RTS
+
+LoadGameAttribute:
+  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA #$27
+  STA PPU_ADDRESS       ; write the high byte of $23C0 address
+  LDA #$C0
+  STA PPU_ADDRESS       ; write the low byte of $23C0 address
+  LDX #$00              ; start out at 0
+LoadGameAttributeLoop:
+  LDA game_attribute, x              ; normally load data from address (attribute + the value in x)
+  STA $2007             ; write to PPU
+  INX                   ; X = X + 1
+  CPX #$40              ; 64 total bytes necessary to do full screen
+  BNE LoadGameAttributeLoop
+  RTS
+
+LoadTitleAttribute:
+  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA #$27
+  STA PPU_ADDRESS       ; write the high byte of $23C0 address
+  LDA #$C0
+  STA PPU_ADDRESS       ; write the low byte of $23C0 address
+  LDX #$00              ; start out at 0
+LoadTitleAttributeLoop:
+  LDA title_attribute, x              ; normally load data from address (attribute + the value in x)
+  STA $2007             ; write to PPU
+  INX                   ; X = X + 1
+  CPX #$40              ; 64 total bytes necessary to do full screen
+  BNE LoadTitleAttributeLoop
+  RTS
 
 DecrementP1Rate:
   LDX p1_bp_rate_count
@@ -395,6 +423,11 @@ DisplayScreen0:
 
 DisplayScreen1:
   LDA #%10011001
+  STA PPU_CTRL_REG1
+  RTS
+
+DisplayTitleScreen:
+  LDA #%10001001
   STA PPU_CTRL_REG1
   RTS
 
@@ -650,6 +683,7 @@ NotMenuSecondsOption:
   BEQ MenuLogicDone
   LDA #GAME_SCROLL_TO_GAME ; start the game
   STA game_state
+  JSR LoadGameAttribute
   JSR MoveSpritesOffScreen
   JMP MenuLogicDone
 MenuLogicDone:
@@ -889,37 +923,115 @@ LoadMenuBackground4Loop:
   BNE LoadMenuBackground4Loop  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
   RTS
 
-LoadGameBackground:
+LoadGameBackgroundRow:
+  ; 256 / (4 bytes per sprite) = 64 bytes per low pointer locations
+  LDA background_row
+  LSR A
+  LSR A
+  LSR A  ; divide by 8 to get the high pointer location
+  CLC
+  ADC #$24                   ; all highs start at 24 (low starts at 0)
+  STA background_high
+  LDA background_row
+  AND #%00001111           ; take mod 8 to get the low pointer location
+  CLC
+  ASL A
+  ASL A
+  ASL A
+  ASL A
+  ASL A                    ; multiply by 32 to get the starting low point
+  STA background_low
+  ;; Setup the location to write to
+  LDA PPU_STATUS
+  LDA background_high
+  STA PPU_ADDRESS
+  LDA background_low
+  STA PPU_ADDRESS
+  ;; Setup the background data to write to it
+  LDA background_low
+  CLC
+  ADC #LOW(game_background)
+  STA background_data_low
+  LDA background_high
+  ADC #HIGH(game_background) ; includes carry from the low add
+  SEC
+  SBC #$24      ; really hacky, but high has the extra 24 tacked on because its a ppu address
+  STA background_data_high
+  LDY #$00
+LoadGameBackgroundRowLoop:
+  LDA [background_data_low], y
+  STA $2007
+  INY
+  CPY #$20 ; 32
+  BNE LoadGameBackgroundRowLoop
+  LDX background_row
+  INX
+  STX background_row
+  CPX #$1E  ; 31 (would be 30, but we just incremented background pointer again
+  BNE LoadGameBackgroundRowDone
+  LDX #$00
+  STX menu_background_needs_loading
+  STX background_row
+LoadGameBackgroundRowDone:
+  LDA #$00
+  STA PPU_SCROLL_REG
+  STA PPU_SCROLL_REG
+  RTS
+
+TitleLogic:
+  LDA p1_buttons_new_press
+  AND #BUTTON_START
+  CMP #$00
+  BEQ TitleLogicDone
+  LDA #GAME_MENU
+  STA game_state
+  LDA #$01
+  STA menu_background_needs_loading ; mark menu to be loaded
+  JSR LoadMenu
+  JSR DisplayScreen0
+TitleLogicDone:
+  RTS
+
+QueueGameBackground:
+  LDA menu_background_needs_loading
+  CMP #$00
+  BEQ QueueGameBackgroundDone
+  JSR LoadGameBackgroundRow
+  JSR DisplayScreen0 ; don't know why above is changing screen, but this will fix it
+QueueGameBackgroundDone:
+  RTS
+
+LoadTitleBackground:
   LDA PPU_STATUS
   LDA #$24
   STA PPU_ADDRESS
   LDA #$00
   STA PPU_ADDRESS
   LDX #$00
-LoadGameBackground1Loop:
-  LDA game_background_1, x
+LoadTitleBackground1Loop:
+  LDA title_background_1, x
   STA $2007
   INX
   CPX #$00
-  BNE LoadGameBackground1Loop
-LoadGameBackground2Loop:
-  LDA game_background_2, x
+  BNE LoadTitleBackground1Loop
+LoadTitleBackground2Loop:
+  LDA title_background_2, x
   STA $2007
   INX
   CPX #$00
-  BNE LoadGameBackground2Loop
-LoadGameBackground3Loop:
-  LDA game_background_3, x
+  BNE LoadTitleBackground2Loop
+LoadTitleBackground3Loop:
+  LDA title_background_3, x
   STA $2007
   INX
   CPX #$00
-  BNE LoadGameBackground3Loop
-LoadGameBackground4Loop:
-  LDA game_background_4, x
+  BNE LoadTitleBackground3Loop
+LoadTitleBackground4Loop:
+  LDA title_background_4, x
   STA $2007
   INX
   CPX #$C0
-  BNE LoadGameBackground4Loop
+  BNE LoadTitleBackground4Loop
   RTS
 
 LoadGame:
@@ -1436,10 +1548,11 @@ ReadController2Loop:
 ; Background/tile loading
 ; ###############################
   .bank 1
+  .org $D000
   .org $E000
 palette:
-  .db $0F,$30,$07,$16,$34,$35,$36,$37,$38,$39,$3A,$3B,$3C,$3D,$3E,$0F
-  .db $0F,$30,$07,$16,$31,$02,$38,$3C,$0F,$1C,$15,$14,$31,$02,$38,$3C
+  .db $0F,$30,$07,$16,$0F,$10,$00,$16,$38,$39,$3A,$3B,$3C,$3D,$3E,$0F ;background palette data
+  .db $0F,$30,$07,$16,$31,$02,$38,$3C,$0F,$1C,$15,$14,$31,$02,$38,$3C ;sprite palette data
 
 press_b_to_start:
   .db $19,$1B
@@ -1633,13 +1746,13 @@ menu_background_4:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 29
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 28
-  .db $0A,$24,$16,$12,$1D,$0C,$11,$03,$0A,$F9,$10,$0A,$16,$0E,$FA,$24  ;; A Mitch3a Game
+  .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 29
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 30
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
 
-game_background_1:
+game_background:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 1
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 2
@@ -1656,7 +1769,6 @@ game_background_1:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 8
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-game_background_2:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 9
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$24,$24,$24,$24  ;;row 10
@@ -1673,7 +1785,6 @@ game_background_2:
   .db $24,$24,$24,$24,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$24,$24,$24,$24  ;;row 16
   .db $24,$24,$24,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-game_background_3:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 17
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 18
@@ -1690,7 +1801,6 @@ game_background_3:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 24
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-game_background_4:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26  ;;row 25
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 26
@@ -1703,20 +1813,100 @@ game_background_4:
   .db $24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24  ;;row 30
   .db $26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24,$26,$24
-attribute:
-  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
-  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000
+
+title_background_1:
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 1
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 2
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 3
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 4
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$6A,$6B,$6C  ;;row 5
+  .db $60,$61,$62,$63,$64,$65,$66,$67,$68,$69,$6A,$6B,$6C,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$70,$71,$72,$73,$74,$75,$76,$77,$78,$79,$7A,$7B,$7C  ;;row 6
+  .db $70,$71,$72,$73,$74,$75,$76,$77,$78,$79,$7A,$7B,$7C,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$8A,$8B,$8C  ;;row 7
+  .db $80,$81,$82,$83,$84,$85,$86,$87,$88,$89,$8A,$8B,$8C,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$90,$91,$92,$93,$94,$95,$96,$97,$98,$99,$9A,$9B,$9C  ;;row 8
+  .db $90,$91,$92,$93,$94,$95,$96,$97,$98,$99,$9A,$9B,$9C,$0A,$0A,$0A
+title_background_2:
+  .db $0A,$0A,$0A,$A0,$A1,$A2,$A3,$A4,$A5,$A6,$A7,$A8,$A9,$AA,$AB,$AC  ;;row 9
+  .db $A0,$A1,$A2,$A3,$A4,$A5,$A6,$A7,$A8,$A9,$AA,$AB,$AC,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$B0,$B1,$B2,$B3,$B4,$B5,$B6,$B7,$B8,$B9,$BA,$BB,$BC  ;;row 10
+  .db $B0,$B1,$B2,$B3,$B4,$B5,$B6,$B7,$B8,$B9,$BA,$BB,$BC,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$C0,$C1,$C2,$C3,$C4,$C5,$C6,$C7,$C8,$C9,$CA,$CB,$CC  ;;row 11
+  .db $C0,$C1,$C2,$C3,$C4,$C5,$C6,$C7,$C8,$C9,$CA,$CB,$CC,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 12
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 13
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$00,$01,$02,$03,$04  ;;row 14 Controller
+  .db $05,$06,$07,$08,$09,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$10,$11,$12,$13,$14  ;;row 15 Controller
+  .db $15,$16,$17,$18,$19,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$20,$21,$22,$23,$24  ;;row 16 Controller
+  .db $25,$26,$27,$28,$29,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+title_background_3:
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$30,$31,$32,$33,$34  ;;row 17 Controller
+  .db $35,$36,$37,$38,$39,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$40,$41,$42,$43,$44  ;;row 18 Controller
+  .db $45,$46,$47,$48,$49,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$50,$51,$52,$53,$54  ;;row 19 Controller
+  .db $55,$56,$57,$58,$59,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 20
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 21
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$E9,$EB,$DE,$EC,$EC,$0A  ;;row 22 press start
+  .db $0A,$EC,$ED,$DA,$EB,$ED,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 23
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 24
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+title_background_4:
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$E7,$E8,$ED,$0A,$ED,$E6  ;;row 24 Not TM nor C
+  .db $0A,$E7,$E8,$EB,$0A,$FF,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$DA,$0A,$E6,$E2,$ED,$DC,$E1  ;;row 26 A Mitch3a Game
+  .db $D3,$DA,$0A,$E0,$DA,$E6,$DE,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$E0,$E2,$ED,$E1,$EE,$DB,$F9,$DC,$E8,$E6,$F8,$E6,$E2,$ED,$DC  ;;row 27 github link
+  .db $E1,$D3,$DB,$F8,$E6,$DA,$EC,$E1,$F2,$E6,$DA,$EC,$E1,$F2,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$E7,$E8,$ED,$0A,$E5,$E2,$DC,$DE,$E7,$EC,$DE,$DD  ;;row 28 not licensed by nintendo
+  .db $0A,$DB,$F2,$0A,$E7,$E2,$E7,$ED,$DE,$E7,$DD,$E8,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 29
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A  ;;row 30
+  .db $0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A,$0A
+
+game_attribute:
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;1x4 rows (0-3)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;2x4 rows (4-7)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;3x4 rows (8-11)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;4x4 rows (12-15)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;5x4 rows (16-19)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;6x4 rows (20-23)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;7x4 rows (24-27)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;8x4 rows (28-30)
+
+title_attribute:
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;1x4 rows (0-3)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;2x4 rows (4-7)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;3x4 rows (8-11)
+  .db %01010101, %01010101, %01010101, %01010101, %01010101, %01010101, %01010101, %01010101 ;4x4 rows (12-15)
+  .db %01010101, %01010101, %01010101, %01010101, %01010101, %01010101, %01010101, %01010101 ;5x4 rows (16-19)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;6x4 rows (20-23)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;7x4 rows (24-27)
+  .db %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000, %00000000 ;8x4 rows (28-30)
 
   .org $FFFA     ;first of the three vectors starts here
   .dw NMI        ;when an NMI happens (once per frame if enabled) the
                    ;processor will jump to the label NMI:
   .dw RESET      ;when the processor first turns on or is reset, it will jump
                    ;to the label RESET:
-  .dw 0          ;external interrupt IRQ is not used in this tutorial
-
+  .dw 0          ;external interrupt IRQ is not used
 
 ;;;;;;;;;;;;;;
-
 
   .bank 2
   .org $0000
