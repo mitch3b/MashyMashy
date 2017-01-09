@@ -1059,6 +1059,9 @@ LoadP1SpritesLoop:
   STA p1_bp_counter_ones
   STA p1_bp_counter_tens
   STA p1_bp_counter_hundreds
+  STA p2_bp_counter_ones
+  STA p2_bp_counter_tens
+  STA p2_bp_counter_hundreds
 
   LDA num_players
   CMP #$02
@@ -1333,12 +1336,12 @@ CalcP2FinalRateDone:
   RTS
 
 CalculateP2FinalRate_10_Sec:
-  LDA p1_bp_counter_hundreds
-  STA p1_bp_rate_tens
-  LDA p1_bp_counter_tens
-  STA p1_bp_rate_ones
-  LDA p1_bp_counter_ones
-  STA p1_bp_rate_tenths
+  LDA p2_bp_counter_hundreds
+  STA p2_bp_rate_tens
+  LDA p2_bp_counter_tens
+  STA p2_bp_rate_ones
+  LDA p2_bp_counter_ones
+  STA p2_bp_rate_tenths
   RTS
 
   ; End p2 rate logic
