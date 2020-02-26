@@ -209,7 +209,7 @@ InitState:
   LDA #GAME_TITLE ; TODO want states to disagree so that it'll load the first time
   STA prev_game_state
 
-  LDA #%000001100  ; disable sprites, disable background, no clipping on left side
+  LDA #%00000110  ; disable sprites, disable background, no clipping on left side
   STA PPU_CTRL_REG2
 
   JSR LoadMenuBackground
@@ -233,6 +233,11 @@ LoadPalettesLoop:
 ; if compare was equal to 128, keep going down
   JSR LoadMenuAttribute
   JSR LoadTitleAttribute
+
+  LDA #$00
+  STA PPU_SPR_ADDR       ; set the low byte (00) of the RAM address
+  LDA #$02
+  STA PPU_SPR_DMA        ; set the high byte (02) of the RAM address, start the transfer
 
   LDA #%00011110   ; enable sprites, enable background, no clipping on left side
   STA PPU_CTRL_REG2
@@ -362,7 +367,7 @@ LoadTitleAttribute:
   LDX #$00              ; start out at 0
 LoadTitleAttributeLoop:
   LDA title_attribute, x ; normally load data from address (attribute + the value in x)
-  STA PPUDATA           ; write to PPU
+  STA PPU_DATA           ; write to PPU
   INX                   ; X = X + 1
   CPX #$40              ; 64 total bytes necessary to do full screen
   BNE LoadTitleAttributeLoop
@@ -1001,13 +1006,13 @@ QueueGameBackground:
   CMP #$00
   BEQ QueueGameBackgroundDone
 
-  LDA #%000001100  ; disable sprites, disable background, no clipping on left side
+  LDA #%00000110   ; disable sprites, disable background, no clipping on left side
   STA PPU_CTRL_REG2
 
   JSR LoadGameBackgroundRow
   JSR DisplayScreen0 ; don't know why above is changing screen, but this will fix it
 
-  LDA #%000111100  ; enable sprites, enable background, no clipping on left side
+  LDA #%00011110  ; enable sprites, enable background, no clipping on left side
   STA PPU_CTRL_REG2
 QueueGameBackgroundDone:
   RTS
