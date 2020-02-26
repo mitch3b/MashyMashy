@@ -17,6 +17,7 @@ PPU_SPR_DATA          = $2004
 PPU_SCROLL_REG        = $2005
 PPU_ADDRESS           = $2006
 PPU_DATA              = $2007
+PPU_SPR_DMA           = $4014
 
 SND_REGISTER          = $4000
 SND_SQUARE1_REG       = $4000
@@ -25,11 +26,11 @@ SND_TRIANGLE_REG      = $4008
 SND_NOISE_REG         = $400c
 SND_DELTA_REG         = $4010
 SND_MASTERCTRL_REG    = $4015
+SND_FRAME_IRQ         = $4017
 
-SPR_DMA               = $4014
-CONTROLLER_PORT           = $4016
-CONTROLLER_PORT1          = $4016
-CONTROLLER_PORT2          = $4017
+CONTROLLER_PORT       = $4016
+CONTROLLER_PORT1      = $4016
+CONTROLLER_PORT2      = $4017
 
 ; ################################
 ; Game Tiles 0200 not used, used-> 0204->0228
@@ -160,13 +161,13 @@ RESET:
   SEI          ; disable IRQs
   CLD          ; disable decimal mode
   LDX #$40
-  STX $4017    ; disable APU frame IRQ
+  STX SND_FRAME_IRQ    ; disable APU frame IRQ
   LDX #$FF
   TXS          ; Set up stack
   INX          ; now X = 0
   STX PPU_CTRL_REG1    ; disable NMI
   STX PPU_CTRL_REG2    ; disable rendering
-  STX $4010    ; disable DMC IRQs
+  STX SND_DELTA_REG    ; disable DMC IRQs
 
 vblankwait1:       ; First wait for vblank to make sure PPU is ready
   BIT PPU_STATUS
@@ -320,45 +321,45 @@ RateCountUpdated:
   JMP Forever     ;jump back to Forever, infinite loop
 
 LoadMenuAttribute:
-  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA PPU_STATUS        ; read PPU status to reset the high/low latch
   LDA #$23
   STA PPU_ADDRESS       ; write the high byte of $23C0 address
   LDA #$C0
   STA PPU_ADDRESS       ; write the low byte of $23C0 address
   LDX #$00              ; start out at 0
 LoadMenuAttributeLoop:
-  LDA game_attribute, x      ; normally load data from address (attribute + the value in x)
-  STA $2007             ; write to PPU
+  LDA game_attribute, x ; normally load data from address (attribute + the value in x)
+  STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$40              ; 64 total bytes necessary to do full screen
   BNE LoadMenuAttributeLoop
   RTS
 
 LoadGameAttribute:
-  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA PPU_STATUS        ; read PPU status to reset the high/low latch
   LDA #$27
   STA PPU_ADDRESS       ; write the high byte of $23C0 address
   LDA #$C0
   STA PPU_ADDRESS       ; write the low byte of $23C0 address
   LDX #$00              ; start out at 0
 LoadGameAttributeLoop:
-  LDA game_attribute, x              ; normally load data from address (attribute + the value in x)
-  STA $2007             ; write to PPU
+  LDA game_attribute, x ; normally load data from address (attribute + the value in x)
+  STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$40              ; 64 total bytes necessary to do full screen
   BNE LoadGameAttributeLoop
   RTS
 
 LoadTitleAttribute:
-  LDA $2002             ; read PPU status to reset the high/low latch
+  LDA PPU_STATUS        ; read PPU status to reset the high/low latch
   LDA #$27
   STA PPU_ADDRESS       ; write the high byte of $23C0 address
   LDA #$C0
   STA PPU_ADDRESS       ; write the low byte of $23C0 address
   LDX #$00              ; start out at 0
 LoadTitleAttributeLoop:
-  LDA title_attribute, x              ; normally load data from address (attribute + the value in x)
-  STA $2007             ; write to PPU
+  LDA title_attribute, x ; normally load data from address (attribute + the value in x)
+  STA PPUDATA           ; write to PPU
   INX                   ; X = X + 1
   CPX #$40              ; 64 total bytes necessary to do full screen
   BNE LoadTitleAttributeLoop
@@ -445,7 +446,7 @@ NMI:
   LDA #$00
   STA PPU_SPR_ADDR       ; set the low byte (00) of the RAM address
   LDA #$02
-  STA $4014       ; set the high byte (02) of the RAM address, start the transfer
+  STA PPU_SPR_DMA        ; set the high byte (02) of the RAM address, start the transfer
 
   JSR ReadController1
   JSR ReadController2
@@ -454,7 +455,7 @@ NMI:
   STA new_frame ; Tell forever loop that theres a new set of input to process
 
 ; TODO think it'd be better to just load it once and store result in A
-GameLogic
+GameLogic:
   LDA game_state
   CMP #GAME_PLAY
   BEQ GameLogicPlay
@@ -689,7 +690,7 @@ NotMenuSecondsOption:
 MenuLogicDone:
   RTS
 
-ToggleNextMenuItem
+ToggleNextMenuItem:
   LDX REG_MENU_OPTION_CHOOSER_Y
   CPX #MENU_START_Y
   BEQ GoBackToFirstMenuItem
@@ -704,7 +705,7 @@ GoBackToFirstMenuItem:
 DoneToggleNextMenuItem:
   RTS
 
-TogglePrevMenuItem
+TogglePrevMenuItem:
   LDX REG_MENU_OPTION_CHOOSER_Y
   CPX #MENU_NUM_PLAYERS_Y
   BEQ GoBackToLastMenuItem
@@ -737,12 +738,12 @@ ToggleNextMashButtonTryStart:
   BNE ToggleNextMashButtonTrySelect
   JSR LoadMashButtonSelect
   JMP EndToggleNextMashButton
-ToggleNextMashButtonTrySelect
+ToggleNextMashButtonTrySelect:
   CMP #BUTTON_SELECT
   BNE ToggleNextMashButtonTryDownB
   JSR LoadMashButtonDownB
   JMP EndToggleNextMashButton
-ToggleNextMashButtonTryDownB
+ToggleNextMashButtonTryDownB:
   JSR LoadMashButtonA ; None other to try so no need to verify we're on DownB
 EndToggleNextMashButton:
   RTS
@@ -876,7 +877,7 @@ LoadMenuGameTimeLoop:
   BNE LoadMenuGameTimeLoop
   JSR UpdateMenuTime
 
-LoadMashButtonDisplay
+LoadMashButtonDisplay:
   LDX #$00
 LoadMashButtonDisplayLoop:
   LDA menu_button_choice, x
@@ -899,25 +900,25 @@ LoadMenuBackground:
   LDX #$00              ; start out at 0
 LoadMenuBackground1Loop:
   LDA menu_background_1, x; load data from address (background + the value in x)
-  STA $2007             ; write to PPU
+  STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$00              ; load all background tiles
   BNE LoadMenuBackground1Loop  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
 LoadMenuBackground2Loop:
   LDA menu_background_2, x; load data from address (background + the value in x)
-  STA $2007             ; write to PPU
+  STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$00              ; load all background tiles
   BNE LoadMenuBackground2Loop  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
 LoadMenuBackground3Loop:
   LDA menu_background_3, x; load data from address (background + the value in x)
-  STA $2007             ; write to PPU
+  STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$00              ; load all background tiles
   BNE LoadMenuBackground3Loop  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
 LoadMenuBackground4Loop:
   LDA menu_background_4, x; load data from address (background + the value in x)
-  STA $2007             ; write to PPU
+  STA PPU_DATA          ; write to PPU
   INX                   ; X = X + 1
   CPX #$C0              ; load all background tiles 6*32 = xC0
   BNE LoadMenuBackground4Loop  ; Branch to LoadBackgroundLoop if compare was Not Equal to zero
@@ -960,7 +961,7 @@ LoadGameBackgroundRow:
   LDY #$00
 LoadGameBackgroundRowLoop:
   LDA [background_data_low], y
-  STA $2007
+  STA PPU_DATA
   INY
   CPY #$40 ; 64
   BNE LoadGameBackgroundRowLoop
@@ -1010,25 +1011,25 @@ LoadTitleBackground:
   LDX #$00
 LoadTitleBackground1Loop:
   LDA title_background_1, x
-  STA $2007
+  STA PPU_DATA
   INX
   CPX #$00
   BNE LoadTitleBackground1Loop
 LoadTitleBackground2Loop:
   LDA title_background_2, x
-  STA $2007
+  STA PPU_DATA
   INX
   CPX #$00
   BNE LoadTitleBackground2Loop
 LoadTitleBackground3Loop:
   LDA title_background_3, x
-  STA $2007
+  STA PPU_DATA
   INX
   CPX #$00
   BNE LoadTitleBackground3Loop
 LoadTitleBackground4Loop:
   LDA title_background_4, x
-  STA $2007
+  STA PPU_DATA
   INX
   CPX #$C0
   BNE LoadTitleBackground4Loop
@@ -1165,7 +1166,7 @@ DisplayP2FinalRateLoop:
 DisplayP2FinalRateDone:
   RTS
 
-CalculateP1FinalRate
+CalculateP1FinalRate:
   LDA menu_game_time_s_ones
   CMP #$01
   BNE CalculateP1FinalRateTry2
@@ -1255,7 +1256,7 @@ CalculateP1FinalRate_10_Sec:
   RTS
 
 ; TODO there has to be a better way than duplicating all this logic for the p2 rate
-CalculateP2FinalRate
+CalculateP2FinalRate:
   LDA menu_game_time_s_ones
   CMP #$01
   BNE CalculateP2FinalRateTry2
@@ -1407,7 +1408,7 @@ P2RateDisplayDone:
   RTS
 
 ; TODO there has to be a better way to do this
-LoadMashButtonDownB
+LoadMashButtonDownB:
   LDA #BUTTON_DOWN_B
   STA mash_button
   LDX #$00
@@ -1424,7 +1425,7 @@ LoadMashButtonDownBLoop:
   BNE LoadMashButtonDownBLoop
   RTS
 
-LoadMashButtonA
+LoadMashButtonA:
   LDA #BUTTON_A
   STA mash_button
   LDX #$00
@@ -1441,7 +1442,7 @@ LoadMashButtonALoop:
   BNE LoadMashButtonALoop
   RTS
 
-LoadMashButtonB
+LoadMashButtonB:
   LDA #BUTTON_B
   STA mash_button
   LDX #$00
@@ -1458,7 +1459,7 @@ LoadMashButtonBLoop:
   BNE LoadMashButtonBLoop
   RTS
 
-LoadMashButtonSelect
+LoadMashButtonSelect:
   LDA #BUTTON_SELECT
   STA mash_button
   LDX #$00
@@ -1475,7 +1476,7 @@ LoadMashButtonSelectLoop:
   BNE LoadMashButtonSelectLoop
   RTS
 
-LoadMashButtonStart
+LoadMashButtonStart:
   LDA #BUTTON_START
   STA mash_button
   LDX #$00
@@ -1586,11 +1587,11 @@ p1_label:
 num_player_arrow:
   .db $30, $28, $00, $70
 
-menu_game_time
+menu_game_time:
   .db $50, $01, $00, $88   ;tens
   .db $50, $02, $00, $90   ;ones
 
-menu_button_choice
+menu_button_choice:
   .db $40, $0A, $00, $78
   .db $40, $0A, $00, $80
   .db $40, $0A, $00, $88
@@ -1598,42 +1599,42 @@ menu_button_choice
   .db $40, $0A, $00, $98
   .db $40, $0A, $00, $A0
 
-game_text
+game_text:
   .db $A0, $10, $00, $58
   .db $A0, $0A, $00, $60
   .db $A0, $16, $00, $68
   .db $A0, $0E, $00, $70
 
-over_text
+over_text:
   .db $A0, $18, $00, $80
   .db $A0, $1F, $00, $88
   .db $A0, $0E, $00, $90
   .db $A0, $1B, $00, $98
 
-press_text
+press_text:
   .db $B0, $19, $00, $68
   .db $B0, $1B, $00, $70
   .db $B0, $0E, $00, $78
   .db $B0, $1C, $00, $80
   .db $B0, $1C, $00, $88
 
-start_press_text ; Don't love this name, but start_text is already used
+start_press_text: ; Don't love this name, but start_text is already used
   .db $B8, $1C, $00, $68
   .db $B8, $1D, $00, $70
   .db $B8, $0A, $00, $78
   .db $B8, $1B, $00, $80
   .db $B8, $1D, $00, $88
 
-up_text
+up_text:
   .db $1E, $19, $24, $24, $24, $24
 
-down_text
+down_text:
   .db $0D, $18, $20, $17, $24, $24
 
-left_text
+left_text:
   .db $15, $0E, $0F, $1D, $24, $24
 
-right_text
+right_text:
   .db $1B, $12, $10, $11, $1D, $24
 
 start_text:
@@ -1642,19 +1643,19 @@ start_text:
 select_text:
   .db $1C, $0E, $15, $0E, $0C, $1D
 
-a_text
+a_text:
   .db $0A, $24, $24, $24, $24, $24
 
-b_text
+b_text:
   .db $0B, $24, $24, $24, $24, $24
 
-down_b_text
+down_b_text:
   .db $0D, $18, $20, $17, $2A, $0B
 
-rate_meter ; TODO unused
+rate_meter: ; TODO unused
   .db $30, $31, $32, $33, $34, $35, $36, $37
 
-p1_final_rate
+p1_final_rate:
   .db $58, $00, $00, $A8   ;tens game timer
   .db $58, $00, $00, $B0   ;ones game timer
   .db $58, $AF, $00, $B8   ;decimal point
@@ -1662,7 +1663,7 @@ p1_final_rate
   .db $58, $38, $00, $C8   ; slash
   .db $58, $39, $00, $D0   ; s  (for the '/s')
 
-p1_rate_meter
+p1_rate_meter:
   .db $30, $30, $00, $58
   .db $30, $31, $00, $60
   .db $30, $32, $00, $68
@@ -1672,7 +1673,7 @@ p1_rate_meter
   .db $30, $36, $00, $88
   .db $30, $37, $00, $90
 
-p2_final_rate
+p2_final_rate:
   .db $78, $00, $00, $A8   ;tens game timer
   .db $78, $00, $00, $B0   ;ones game timer
   .db $78, $AF, $00, $B8   ;decimal point
@@ -1680,7 +1681,7 @@ p2_final_rate
   .db $78, $38, $00, $C8   ; slash
   .db $78, $39, $00, $D0   ; s  (for the '/s')
 
-p2_rate_meter
+p2_rate_meter:
   .db $90, $30, $00, $58
   .db $90, $31, $00, $60
   .db $90, $32, $00, $68
