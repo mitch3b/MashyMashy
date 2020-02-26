@@ -209,6 +209,9 @@ InitState:
   LDA #GAME_TITLE ; TODO want states to disagree so that it'll load the first time
   STA prev_game_state
 
+  LDA #%000001100  ; disable sprites, disable background, no clipping on left side
+  STA PPU_CTRL_REG2
+
   JSR LoadMenuBackground
   JSR LoadTitleBackground
 
@@ -997,8 +1000,15 @@ QueueGameBackground:
   LDA menu_background_needs_loading
   CMP #$00
   BEQ QueueGameBackgroundDone
+
+  LDA #%000001100  ; disable sprites, disable background, no clipping on left side
+  STA PPU_CTRL_REG2
+
   JSR LoadGameBackgroundRow
   JSR DisplayScreen0 ; don't know why above is changing screen, but this will fix it
+
+  LDA #%000111100  ; enable sprites, enable background, no clipping on left side
+  STA PPU_CTRL_REG2
 QueueGameBackgroundDone:
   RTS
 
