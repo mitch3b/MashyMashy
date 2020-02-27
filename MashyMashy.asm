@@ -1389,7 +1389,7 @@ P1RateDisplayLoop:
   CPX #$20
   BEQ P1RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
 P1RateHideLoop:
-  LDA #$F8
+  LDA #$FE
   STA $0264, x
   INX
   CPX #$20
@@ -1414,7 +1414,7 @@ P2RateDisplayLoop:
   CPX $20
   BEQ P2RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
 P2RateHideLoop:
-  LDA #$F8
+  LDA #$FE
   STA $0284, x
   INX
   CPX #$20
@@ -1510,7 +1510,7 @@ LoadMashButtonStartLoop:
 
 MoveSpritesOffScreen:
   LDX #$00
-  LDA #$F0                      ; Off screen in Y direction
+  LDA #$FE                      ; Off screen in Y direction
 MoveSpritesOffScreenLoop:
   STA $0200, x                  ; Put all sprites in a Y off screen position
   INX
