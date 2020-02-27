@@ -1385,7 +1385,7 @@ RateDisplaySkipP2:
 P1RateDisplay:
   LDA p1_bp_rate_count
   CMP #$00
-  BEQ P1RateHideLoop
+  BEQ P1RateHideLoopEnter
   ASL A
   ASL A
   STA bp_rate_count_times_4
@@ -1398,6 +1398,9 @@ P1RateDisplayLoop:
   BNE P1RateDisplayLoop
   CPX #$20
   BEQ P1RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
+  JMP P1RateHideLoop
+P1RateHideLoopEnter:
+  LDX #$00
 P1RateHideLoop:
   LDA #$FE
   STA $0264, x
@@ -1410,7 +1413,7 @@ P1RateDisplayDone:
 P2RateDisplay:
   LDA p2_bp_rate_count
   CMP #$00
-  BEQ P2RateHideLoop
+  BEQ P2RateHideLoopEnter
   ASL A
   ASL A
   STA bp_rate_count_times_4
@@ -1423,6 +1426,9 @@ P2RateDisplayLoop:
   BNE P2RateDisplayLoop
   CPX #$20
   BEQ P2RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
+  JMP P2RateHideLoop
+P2RateHideLoopEnter:
+  LDX #$00
 P2RateHideLoop:
   LDA #$FE
   STA $0284, x
