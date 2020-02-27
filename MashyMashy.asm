@@ -1421,7 +1421,7 @@ P2RateDisplayLoop:
   INX
   CPX bp_rate_count_times_4 ; 32 -> 8 sprites
   BNE P2RateDisplayLoop
-  CPX $20
+  CPX #$20
   BEQ P2RateDisplayDone ; if we already drew 8 sprites, then skip the 'hide' state
 P2RateHideLoop:
   LDA #$FE
