@@ -692,8 +692,18 @@ NotMenuSecondsOption:
   BEQ MenuLogicDone
   LDA #GAME_SCROLL_TO_GAME ; start the game
   STA game_state
-  JSR LoadGameAttribute
+
+  LDA #%00000110   ; disable sprites, disable background, no clipping on left side
+  STA PPU_CTRL_REG2
+
   JSR MoveSpritesOffScreen
+  JSR LoadGameAttribute
+
+  JSR DisplayScreen0
+
+  LDA #%00011110   ; enable sprites, enable background, no clipping on left side
+  STA PPU_CTRL_REG2
+
   JMP MenuLogicDone
 MenuLogicDone:
   RTS
